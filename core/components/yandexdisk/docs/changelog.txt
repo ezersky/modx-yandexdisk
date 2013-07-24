@@ -1,0 +1,5 @@
+Changelog file for Yandex Disk Media Source.
+
+Yandex Disk Media Source 0.1-beta1
+====================================
+- Initial release
