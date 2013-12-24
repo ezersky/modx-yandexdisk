@@ -1,19 +1,43 @@
 <?php
 require_once MODX_CORE_PATH . 'model/modx/sources/modmediasource.class.php';
-require_once MODX_CORE_PATH . 'components/yandexdisk/include/webdav_client.php';
+require_once MODX_CORE_PATH . 'components/yandexdisk/vendor/autoload.php';
 
 class yandexDiskMediaSource extends modMediaSource implements modMediaSourceInterface
 {
 	protected $loaderPaths;
+
 	/**
 	 * @var ElementPropertySession
 	 */
 	private $session;
+
 	/**
 	 * @var YandexDiskClient
 	 */
 	private $client;
+
 	private $connectorUrl;
+
+    // must implement
+    /*
+    public function getContainerList($path) { return array(); }
+    public function getObjectsInContainer($path) { return array(); }
+    public function createContainer($name,$parentContainer) { return true; }
+    public function removeContainer($path) { return true; }
+    public function renameContainer($oldPath,$newName) { return true; }
+    public function updateContainer() { return true; }
+    public function uploadObjectsToContainer($container,array $objects = array()) { return true; }
+    public function getObjectContents($objectPath) { return true; }
+    public function updateObject($objectPath,$content) { return true; }
+    public function createObject($objectPath,$name,$content) { return true; }
+    public function removeObject($objectPath) { return true; }
+    public function renameObject($oldPath,$newName) { return true; }
+    public function getBasePath($object = '') { return ''; }
+    public function getBaseUrl($object = '') { return ''; }
+    public function getObjectUrl($object = '') { return ''; }
+    public function moveObject($from,$to,$point = 'append') { return true; }
+    public function getDefaultProperties() { return array(); }
+    */
 
 	/**
 	 * Override the constructor to always force Yandex Disk sources not to be streams
@@ -22,7 +46,7 @@ class yandexDiskMediaSource extends modMediaSource implements modMediaSourceInte
 	public function __construct(xPDO &$xpdo)
 	{
 		parent::__construct($xpdo);
-		$this->set('is_stream', false);
+		$this->set('is_stream', true);
 		$this->xpdo->lexicon->load('yandexdisk:default');
 	}
 

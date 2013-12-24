@@ -1,0 +1,17 @@
+{
+    "name": "Alroniks/modx-yandexdisk",
+    "description": "YandexDisk Media Provider for MODX",
+    "minimum-stability": "stable",
+    "authors": [
+        {
+            "name": "Ivan Klimchuk",
+            "email": "ivan@klimchuk.com",
+            "homepage": "http://klimchuk.com",
+            "role": "Developer"
+        }
+    ],
+    "require": {
+        "php": ">=5.3.0",
+        "nixsolutions/yandex-sdk-php": "0.1.1"
+    }
+}

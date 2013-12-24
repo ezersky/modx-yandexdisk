@@ -1,6 +1,6 @@
---------------------
-Yandex Disk Media Source
---------------------
-Version: 0.1-beta1
+---------------------------------
+Yandex Disk Media Source provider
+---------------------------------
+Version: 1.0.0-beta
 
-Navigates Ynadex Disk files.
+Navigates Yandex Disk files.
