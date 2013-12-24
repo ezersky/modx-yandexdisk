@@ -2,6 +2,9 @@
 
 //TODO: добавить возможность указывать рабочий инстанс modx для сборки через параметр
 // или подключить через композер, если так сработает
+// или vagrant c  готовой виртуалкой - что лучше всего наверное
+
+date_default_timezone_set('Europe/Minsk');
 
 $mtime = microtime();
 $mtime = explode(' ', $mtime);
@@ -11,26 +14,26 @@ set_time_limit(0);
 
 require_once 'build.config.php';
 
-$root = dirname(dirname(__FILE__)).'/';
+$root = dirname(dirname(__FILE__)) . '/';
 $sources = array(
     'root' => $root,
     'build' => $root . '_build/',
     'data' => $root . '_build/data/',
     'resolvers' => $root . '_build/resolvers/',
-    'lexicon' => $root . 'core/components/'.PKG_NAME_LOWER.'/lexicon/',
-    'docs' => $root.'core/components/'.PKG_NAME_LOWER.'/docs/',
-    'source_core' => $root.'core/components/'.PKG_NAME_LOWER,
+    'lexicon' => $root . 'core/components/' . PKG_NAME_LOWER . '/lexicon/',
+    'docs' => $root . 'core/components/' . PKG_NAME_LOWER . '/docs/',
+    'source_core' => $root . 'core/components/' . PKG_NAME_LOWER,
 );
 unset($root);
 
 require_once MODX_CORE_PATH . 'model/modx/modx.class.php';
-require_once $sources['build'] . '/includes/functions.php';
+//require_once $sources['build'] . '/includes/functions.php';
 
 if (!XPDO_CLI_MODE) {
     echo '<pre>';
 }
 
-$modx= new modX();
+$modx = new modX();
 $modx->initialize('mgr');
 $modx->setLogLevel(modX::LOG_LEVEL_INFO);
 $modx->setLogTarget('ECHO');
