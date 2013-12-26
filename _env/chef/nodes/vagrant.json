@@ -1,0 +1,19 @@
+{
+    "app": {
+        "name": "modx-yandexdisk",
+        "rootpath": "/var/www/modx-yandexdisk/",
+        "domain": "modx-yandexdisk.dev"
+    },
+    "user": {
+        "name": "vagrant"
+    },
+    "nginx": {
+        "version": "1.*",
+        "default_sire_enabled" : "false"
+    },
+    "run_list": [
+        "recipe[apt]",
+        "recipe[nginx]",
+        "recipe[php-fpm]"
+    ]
+}
