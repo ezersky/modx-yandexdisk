@@ -11,16 +11,14 @@ Vagrant.configure(VAGRANTFILE_API_VERSION) do |config|
   # config.vm.network :private_network, ip: "192.168.33.10"
   # config.vm.network :public_network
 
-  # If true, then any SSH connections made will enable agent forwarding.
-  # Default value: false
-  # config.ssh.forward_agent = true
-
   config.vm.synced_folder "core/components/yandexdisk", "/var/www/modx/core/components/yandexdisk"
 
   config.vm.provider :virtualbox do |vb|
     vb.gui = false
     vb.customize ["modifyvm", :id, "--memory", "256"]
   end
+
+  config.vm.provision :shell, :inline => "sudo apt-get update"
 
   VAGRANT_JSON = JSON.parse(Pathname(__FILE__).dirname.join('_env/chef/nodes', 'vagrant.json').read)
 
