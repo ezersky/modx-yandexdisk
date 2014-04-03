@@ -14,25 +14,21 @@ class YandexDiskMediaSource extends modMediaSource implements modMediaSourceInte
     private $client;
 
     /*
-     * done function getContainerList($path) { return array(); }
-     * done function createContainer($name,$parentContainer) { return true; }
-     * done function removeContainer($path) { return true; }
-     * done function renameContainer($oldPath,$newName) { return true; }
+     *
+    public function createObject($objectPath,$name,$content) { return true; }
+    public function moveObject($from,$to,$point = 'append') { return true; }
 
     ??? public function updateContainer() { return true; }
+    ??? public function updateObject($objectPath,$content) { return true; }
     public function getObjectsInContainer($path) { return array(); }
 
     public function uploadObjectsToContainer($container,array $objects = array()) { return true; }
     public function getObjectContents($objectPath) { return true; }
-    public function updateObject($objectPath,$content) { return true; }
-    public function createObject($objectPath,$name,$content) { return true; }
-    public function removeObject($objectPath) { return true; }
-    public function renameObject($oldPath,$newName) { return true; }
+
     public function getBasePath($object = '') { return ''; }
     public function getBaseUrl($object = '') { return ''; }
     public function getObjectUrl($object = '') { return ''; }
-    public function moveObject($from,$to,$point = 'append') { return true; }
-    public function getDefaultProperties() { return array(); }
+
     */
 
     /**
@@ -408,66 +404,81 @@ class YandexDiskMediaSource extends modMediaSource implements modMediaSourceInte
         return true;
     }
 
-	/**
-	 * Upload objects to a specific container
-	 * @param string $container
-	 * @param array $objects
-	 * @return boolean
-	 */
-	public function uploadObjectsToContainer($container, array $objects = array())
-	{
-		$tempPath = $this->xpdo->getOption(xPDO::OPT_CACHE_PATH) . 'yandexdisk/' . uniqid() . '/';
-		if (!file_exists($tempPath)) {
-			$this->xpdo->cacheManager->writeTree($tempPath);
-		}
-		$this->xpdo->context->prepare();
-		$allowedFileTypes = explode(',', $this->xpdo->getOption('upload_files', null, ''));
-		$allowedFileTypes = array_merge(explode(',', $this->xpdo->getOption('upload_images')), explode(',', $this->xpdo->getOption('upload_media')), explode(',', $this->xpdo->getOption('upload_flash')), $allowedFileTypes);
-		$allowedFileTypes = array_unique($allowedFileTypes);
-		foreach ($objects as $file) {
-			if ($file['error'] != UPLOAD_ERR_OK || empty($file['name'])) {
-				continue;
-			}
-			$ext = @pathinfo($file['name'], PATHINFO_EXTENSION);
-			$ext = strtolower($ext);
-			if (empty($ext) || !in_array($ext, $allowedFileTypes)) {
-				$this->addError('path', $this->xpdo->lexicon('file_err_ext_not_allowed', array(
-					'ext' => $ext,
-				)));
-				continue;
-			}
-			$fileName = $tempPath . $file['name'];
-			$success = false;
-			if (move_uploaded_file($file['tmp_name'], $fileName)) {
-				$response = null;
+    /**
+     * Upload objects to a specific container
+     * @param string $container
+     * @param array $objects
+     * @return boolean
+     */
+    public function uploadObjectsToContainer($container, array $objects = [])
+    {
+        $temporaryPath = $this->xpdo->getOption(xPDO::OPT_CACHE_PATH) . 'yandexdisk/' . uniqid() . '/';
+        if (!file_exists($temporaryPath)) {
+            $this->xpdo->cacheManager->writeTree($temporaryPath);
+        }
+        $this->xpdo->context->prepare();
 
-				$container .= $file['name'];
-				$response = $this->client->put_file('/'.$container, $fileName);
+        $allowedFileTypes = explode(',', $this->xpdo->getOption('upload_files', null, ''));
+        $allowedFileTypes = array_merge(
+            explode(',', $this->xpdo->getOption('upload_images')),
+            explode(',', $this->xpdo->getOption('upload_media')),
+            explode(',', $this->xpdo->getOption('upload_flash')),
+            $allowedFileTypes
+        );
+        $allowedFileTypes = array_unique($allowedFileTypes);
 
-				if($response != 201){
-					$this->xpdo->log(xPDO::LOG_LEVEL_ERROR, $this->lexicon('uploadObjectsToContainer', array(
-						'path' => $container,
-						'message' => $e->getMessage(),
-					), 'error'));
-				}else{
-					@unlink($fileName);
-					$success = true;
-				}
-			}
-			if (!$success) {
-				$this->addError('path', $this->xpdo->lexicon('file_err_upload'));
-				continue;
-			}
-		}
-		@rmdir($tempPath);
-		$this->xpdo->invokeEvent('OnFileManagerUpload', array(
-			'files' => &$objects,
-			'directory' => $container,
-			'source' => &$this,
-		));
-		$this->xpdo->logManagerAction('file_upload', '', $container);
-		return true;
-	}
+        foreach ($objects as $file) {
+            if ($file['error'] != UPLOAD_ERR_OK || empty($file['name'])) {
+                continue;
+            }
+            $ext = @pathinfo($file['name'], PATHINFO_EXTENSION);
+            $ext = strtolower($ext);
+            if (empty($ext) || !in_array($ext, $allowedFileTypes)) {
+                $this->addError('path', $this->xpdo->lexicon('file_err_ext_not_allowed', compact('ext')));
+                continue;
+            }
+
+            $fileName = $temporaryPath . $file['name'];
+            if (move_uploaded_file($file['tmp_name'], $fileName)) {
+                try {
+                    $file['path'] = $fileName;
+                    $this->client->uploadFile(
+                        $container == '/'
+                            ? $container
+                            : '/' . $container,
+                        $file
+                    );
+                } catch (DiskException $e) {
+                    $this->xpdo->log(
+                        xPDO::LOG_LEVEL_ERROR,
+                        $this->lexicon(
+                            'uploadObjectsToContainer',
+                            [
+                                'path' => $container,
+                                'message' => $e->getMessage(),
+                            ],
+                            'error'
+                        )
+                    );
+                    $this->addError('path', $this->xpdo->lexicon('file_err_upload'));
+                    continue;
+                }
+            }
+            @unlink($fileName);
+        }
+        @rmdir($temporaryPath);
+        $this->xpdo->invokeEvent(
+            'OnFileManagerUpload',
+            [
+                'files' => &$objects,
+                'directory' => $container,
+                'source' => &$this
+            ]
+        );
+
+        $this->xpdo->logManagerAction('file_upload', '', $container);
+        return true;
+    }
 
 	/**
 	 * Get the contents of an object
@@ -519,82 +530,124 @@ class YandexDiskMediaSource extends modMediaSource implements modMediaSourceInte
 		return true;
 	}
 
-	/**
-	 * Create an object from a path
-	 * @param string $objectPath
-	 * @param string $name
-	 * @param string $content
-	 * @return boolean|string
-	 */
-	public function createObject($objectPath, $name, $content)
-	{
-		// TODO: Need to be implemented
-		return true;
-	}
+    /**
+     * Create an object from a path
+     * @param string $path
+     * @param string $name
+     * @param string $content
+     * @return boolean|string
+     */
+    public function createObject($path, $name, $content)
+    {
+        print_r($name);
+        print_r($content);
 
-	/**
-	 * Remove an object
-	 * @param string $objectPath
-	 * @return boolean
-	 */
-	public function removeObject($objectPath)
-	{
-		$response = null;
-		
-		$response = $this->client->delete($objectPath);
+        file_put_contents('php://tmp', $content);
+        try {
+            $this->client->uploadFile($path, 'php://tmp');
+        } catch (DiskException $e) {
+            $this->xpdo->log(
+                xPDO::LOG_LEVEL_ERROR,
+                $this->lexicon(
+                    'object.create',
+                    [
+                        'path' => $path,
+                        'message' => $e->getMessage(),
+                    ],
+                    'error'
+                )
+            );
+            $this->addError('file', $this->xpdo->lexicon('file_err_upload'));
 
-		if($response['status'] != '200'){
-			$this->xpdo->log(xPDO::LOG_LEVEL_ERROR, $this->lexicon('removeObject', array(
-				'path' => $objectPath,
-				'message' => $e->getMessage(),
-			), 'error'));
-			$this->addError('file', $this->xpdo->lexicon('file_err_remove'));
-			return false;
-		}
-		$this->xpdo->logManagerAction('file_remove', '', $objectPath);
-		return true;
-	}
+            return false;
+        }
 
-	/**
-	 * Rename a file/object
-	 * @param string $oldPath
-	 * @param string $newName
-	 * @return bool
-	 */
-	public function renameObject($oldPath, $newName)
-	{
+        return true;
+    }
 
-		$response = null;
+    /**
+     * Remove an object
+     * @param string $path
+     * @return boolean
+     */
+    public function removeObject($path)
+    {
+        try {
+            $this->client->delete($path);
+        } catch (DiskException $e) {
+            $this->xpdo->log(
+                xPDO::LOG_LEVEL_ERROR,
+                $this->lexicon(
+                    'object.remove',
+                    [
+                        'path' => $path,
+                        'message' => $e->getMessage(),
+                    ],
+                    'error'
+                )
+            );
+            $this->addError('file', $this->xpdo->lexicon('file_err_remove'));
 
-		if(dirname($oldPath) == '/') // root
-			$response = $this->client->move($oldPath, dirname($oldPath) . $newName, 1);
-		else
-			$response = $this->client->move($oldPath, dirname($oldPath) .'/'. $newName, 1);
+            return false;
+        }
 
-		
+        $this->xpdo->logManagerAction('file_remove', '', $path);
 
-		if($response != 201){
-			$this->xpdo->log(xPDO::LOG_LEVEL_ERROR, $this->lexicon('removeObject', array(
-				'path' => $oldPath,
-				'name' => $newName,
-				'message' => $e->getMessage(),
-			), 'error'));
-			$this->addError('name', $this->xpdo->lexicon('file_folder_err_rename'));
-			return false;
-		}
-		$this->xpdo->logManagerAction('file_rename', '', $oldPath);
-		return true;
-	}
+        return true;
+    }
 
-	/**
-	 * Get the URL for an object in this source
-	 * @param string $object
-	 * @return string
-	 */
-	public function getObjectUrl($object = '')
-	{
-		return $this->xpdo->getOption('url_scheme', null, MODX_URL_SCHEME) . $this->xpdo->getOption('http_host', null, MODX_HTTP_HOST) . $this->xpdo->getOption('base_url', MODX_BASE_URL) . ($object == '' ? '' : $this->getUrl($object));
-	}
+    /**
+     * Rename a file/object
+     * @param string $old
+     * @param string $new
+     * @return bool
+     */
+    public function renameObject($old, $new)
+    {
+        try {
+            $new = dirname($old) == '/'
+                ? dirname($old) . $new
+                : join('/', [dirname($old), $new]);
+            $this->client->move($old, $new);
+        } catch (DiskException $e) {
+            $this->xpdo->log(
+                xPDO::LOG_LEVEL_ERROR,
+                $this->lexicon(
+                    'removeObject',
+                    [
+                        'path' => $old,
+                        'name' => $new,
+                        'message' => $e->getMessage(),
+                    ],
+                    'error'
+                )
+            );
+            $this->addError('name', $this->xpdo->lexicon('file_folder_err_rename'));
+
+            return false;
+        }
+
+        $this->xpdo->logManagerAction('file_rename', '', $old);
+
+        return true;
+    }
+
+    /**
+     * Get the URL for an object in this source
+     * @param string $object
+     * @return string
+     */
+    public function getObjectUrl($object = '')
+    {
+        $data = [
+            'scheme' => $this->xpdo->getOption('url_scheme', null, MODX_URL_SCHEME),
+            'host' => $this->xpdo->getOption('http_host', null, MODX_HTTP_HOST),
+            'baseUrl' => $this->xpdo->getOption('base_url', null, MODX_BASE_URL),
+            'object' => $object ? $this->getUrl($object) : ''
+        ];
+
+        return join('', $data);
+    }
 
 	/**
 	 * Prepares the output URL when the Source is being used in an Element
@@ -638,38 +691,31 @@ class YandexDiskMediaSource extends modMediaSource implements modMediaSourceInte
 		return true;
 	}
 
-	/**
-	 * Get the name of this source type
-	 * @return string
-	 */
-	public function getTypeName()
-	{
-		return $this->lexicon('name');
-	}
+    /**
+     * Get the name of this source type
+     * @return string
+     */
+    public function getTypeName()
+    {
+        return $this->lexicon('name');
+    }
 
-	/**
-	 * Get a short description of this source type
-	 * @return string
-	 */
-	public function getTypeDescription()
-	{
-		return $this->lexicon('description');
-	}
+    /**
+     * Get a short description of this source type
+     * @return string
+     */
+    public function getTypeDescription()
+    {
+        return $this->lexicon('description');
+    }
 
-	public function getProperties()
-	{
-		$properties = parent::getProperties();
-		//$this->processToken($properties);
-		return $properties;
-	}
-
-	/**
-	 * Get the default properties for this source. Override this in your custom source driver to provide custom
-	 * properties for your source type.
-	 * @return array
-	 */
-	public function getDefaultProperties()
-	{
+    /**
+     * Get the default properties for this source. Override this in your custom source driver to provide custom
+     * properties for your source type.
+     * @return array
+     */
+    public function getDefaultProperties()
+    {
         return [
             'token' => [
                 'name' => 'token',
@@ -678,6 +724,13 @@ class YandexDiskMediaSource extends modMediaSource implements modMediaSourceInte
                 'desc' => 'yandexdisk.prop.token',
                 'lexicon' => 'yandexdisk:properties'
             ],
+            'skiped' => [
+                'name' => 'skiped',
+                'type' => 'textfield',
+                'value' => '.svn,.git,_notes,nbproject,.idea,.DS_Store',
+                'desc' => 'yandexdisk.prop.skiped',
+                'lexicon' => 'yandexdisk:properties'
+            ]
 //            'imageExtensions' => [
 //                'name' => 'imageExtensions',
 //                'type' => 'textfield',
@@ -685,13 +738,7 @@ class YandexDiskMediaSource extends modMediaSource implements modMediaSourceInte
 //                'desc' => 'yandexdisk.prop.imageExtensions',
 //                'lexicon' => 'yandexdisk:properties'
 //            ],
-//            'skipFiles' => [
-//                'name' => 'skipFiles',
-//                'type' => 'textfield',
-//                'value' => '.svn,.git,_notes,nbproject,.idea,.DS_Store',
-//                'desc' => 'yandexdisk.prop.skipFiles',
-//                'lexicon' => 'yandexdisk:properties'
-//            ]
+
         ];
 	}
 
@@ -798,6 +845,7 @@ class YandexDiskMediaSource extends modMediaSource implements modMediaSourceInte
 	}
 
 	public function getThumbnail($path)
+        // переписать на метод из апи
 	{
         return ''; // заглушка пока что
 		$fileName = $this->getCacheFileName($path);
@@ -822,203 +870,6 @@ class YandexDiskMediaSource extends modMediaSource implements modMediaSourceInte
 		return '';
 	}
 
-	public function getContentType($ext)
-	{
-		$contentType = 'application/octet-stream';
-		$mimeTypes = array(
-			'323' => 'text/h323',
-			'acx' => 'application/internet-property-stream',
-			'ai' => 'application/postscript',
-			'aif' => 'audio/x-aiff',
-			'aifc' => 'audio/x-aiff',
-			'aiff' => 'audio/x-aiff',
-			'asf' => 'video/x-ms-asf',
-			'asr' => 'video/x-ms-asf',
-			'asx' => 'video/x-ms-asf',
-			'au' => 'audio/basic',
-			'avi' => 'video/x-msvideo',
-			'axs' => 'application/olescript',
-			'bas' => 'text/plain',
-			'bcpio' => 'application/x-bcpio',
-			'bin' => 'application/octet-stream',
-			'bmp' => 'image/bmp',
-			'c' => 'text/plain',
-			'cat' => 'application/vnd.ms-pkiseccat',
-			'cdf' => 'application/x-cdf',
-			'cer' => 'application/x-x509-ca-cert',
-			'class' => 'application/octet-stream',
-			'clp' => 'application/x-msclip',
-			'cmx' => 'image/x-cmx',
-			'cod' => 'image/cis-cod',
-			'cpio' => 'application/x-cpio',
-			'crd' => 'application/x-mscardfile',
-			'crl' => 'application/pkix-crl',
-			'crt' => 'application/x-x509-ca-cert',
-			'csh' => 'application/x-csh',
-			'css' => 'text/css',
-			'dcr' => 'application/x-director',
-			'der' => 'application/x-x509-ca-cert',
-			'dir' => 'application/x-director',
-			'dll' => 'application/x-msdownload',
-			'dms' => 'application/octet-stream',
-			'doc' => 'application/msword',
-			'dot' => 'application/msword',
-			'dvi' => 'application/x-dvi',
-			'dxr' => 'application/x-director',
-			'eps' => 'application/postscript',
-			'etx' => 'text/x-setext',
-			'evy' => 'application/envoy',
-			'exe' => 'application/octet-stream',
-			'fif' => 'application/fractals',
-			'flr' => 'x-world/x-vrml',
-			'gif' => 'image/gif',
-			'gtar' => 'application/x-gtar',
-			'gz' => 'application/x-gzip',
-			'h' => 'text/plain',
-			'hdf' => 'application/x-hdf',
-			'hlp' => 'application/winhlp',
-			'hqx' => 'application/mac-binhex40',
-			'hta' => 'application/hta',
-			'htc' => 'text/x-component',
-			'htm' => 'text/html',
-			'html' => 'text/html',
-			'htt' => 'text/webviewhtml',
-			'ico' => 'image/x-icon',
-			'ief' => 'image/ief',
-			'iii' => 'application/x-iphone',
-			'ins' => 'application/x-internet-signup',
-			'isp' => 'application/x-internet-signup',
-			'jfif' => 'image/pipeg',
-			'jpe' => 'image/jpeg',
-			'jpeg' => 'image/jpeg',
-			'jpg' => 'image/jpeg',
-			'js' => 'application/x-javascript',
-			'latex' => 'application/x-latex',
-			'lha' => 'application/octet-stream',
-			'lsf' => 'video/x-la-asf',
-			'lsx' => 'video/x-la-asf',
-			'lzh' => 'application/octet-stream',
-			'm13' => 'application/x-msmediaview',
-			'm14' => 'application/x-msmediaview',
-			'm3u' => 'audio/x-mpegurl',
-			'man' => 'application/x-troff-man',
-			'mdb' => 'application/x-msaccess',
-			'me' => 'application/x-troff-me',
-			'mht' => 'message/rfc822',
-			'mhtml' => 'message/rfc822',
-			'mid' => 'audio/mid',
-			'mny' => 'application/x-msmoney',
-			'mov' => 'video/quicktime',
-			'movie' => 'video/x-sgi-movie',
-			'mp2' => 'video/mpeg',
-			'mp3' => 'audio/mpeg',
-			'mpa' => 'video/mpeg',
-			'mpe' => 'video/mpeg',
-			'mpeg' => 'video/mpeg',
-			'mpg' => 'video/mpeg',
-			'mpp' => 'application/vnd.ms-project',
-			'mpv2' => 'video/mpeg',
-			'ms' => 'application/x-troff-ms',
-			'mvb' => 'application/x-msmediaview',
-			'nws' => 'message/rfc822',
-			'oda' => 'application/oda',
-			'p10' => 'application/pkcs10',
-			'p12' => 'application/x-pkcs12',
-			'p7b' => 'application/x-pkcs7-certificates',
-			'p7c' => 'application/x-pkcs7-mime',
-			'p7m' => 'application/x-pkcs7-mime',
-			'p7r' => 'application/x-pkcs7-certreqresp',
-			'p7s' => 'application/x-pkcs7-signature',
-			'pbm' => 'image/x-portable-bitmap',
-			'pdf' => 'application/pdf',
-			'pfx' => 'application/x-pkcs12',
-			'pgm' => 'image/x-portable-graymap',
-			'pko' => 'application/ynd.ms-pkipko',
-			'pma' => 'application/x-perfmon',
-			'pmc' => 'application/x-perfmon',
-			'pml' => 'application/x-perfmon',
-			'pmr' => 'application/x-perfmon',
-			'pmw' => 'application/x-perfmon',
-			'pnm' => 'image/x-portable-anymap',
-			'pot' => 'application/vnd.ms-powerpoint',
-			'ppm' => 'image/x-portable-pixmap',
-			'pps' => 'application/vnd.ms-powerpoint',
-			'ppt' => 'application/vnd.ms-powerpoint',
-			'prf' => 'application/pics-rules',
-			'ps' => 'application/postscript',
-			'pub' => 'application/x-mspublisher',
-			'qt' => 'video/quicktime',
-			'ra' => 'audio/x-pn-realaudio',
-			'ram' => 'audio/x-pn-realaudio',
-			'ras' => 'image/x-cmu-raster',
-			'rgb' => 'image/x-rgb',
-			'rmi' => 'audio/mid',
-			'roff' => 'application/x-troff',
-			'rtf' => 'application/rtf',
-			'rtx' => 'text/richtext',
-			'scd' => 'application/x-msschedule',
-			'sct' => 'text/scriptlet',
-			'setpay' => 'application/set-payment-initiation',
-			'setreg' => 'application/set-registration-initiation',
-			'sh' => 'application/x-sh',
-			'shar' => 'application/x-shar',
-			'sit' => 'application/x-stuffit',
-			'snd' => 'audio/basic',
-			'spc' => 'application/x-pkcs7-certificates',
-			'spl' => 'application/futuresplash',
-			'src' => 'application/x-wais-source',
-			'sst' => 'application/vnd.ms-pkicertstore',
-			'stl' => 'application/vnd.ms-pkistl',
-			'stm' => 'text/html',
-			'svg' => 'image/svg+xml',
-			'sv4cpio' => 'application/x-sv4cpio',
-			'sv4crc' => 'application/x-sv4crc',
-			't' => 'application/x-troff',
-			'tar' => 'application/x-tar',
-			'tcl' => 'application/x-tcl',
-			'tex' => 'application/x-tex',
-			'texi' => 'application/x-texinfo',
-			'texinfo' => 'application/x-texinfo',
-			'tgz' => 'application/x-compressed',
-			'tif' => 'image/tiff',
-			'tiff' => 'image/tiff',
-			'tr' => 'application/x-troff',
-			'trm' => 'application/x-msterminal',
-			'tsv' => 'text/tab-separated-values',
-			'txt' => 'text/plain',
-			'uls' => 'text/iuls',
-			'ustar' => 'application/x-ustar',
-			'vcf' => 'text/x-vcard',
-			'vrml' => 'x-world/x-vrml',
-			'wav' => 'audio/x-wav',
-			'wcm' => 'application/vnd.ms-works',
-			'wdb' => 'application/vnd.ms-works',
-			'wks' => 'application/vnd.ms-works',
-			'wmf' => 'application/x-msmetafile',
-			'wps' => 'application/vnd.ms-works',
-			'wri' => 'application/x-mswrite',
-			'wrl' => 'x-world/x-vrml',
-			'wrz' => 'x-world/x-vrml',
-			'xaf' => 'x-world/x-vrml',
-			'xbm' => 'image/x-xbitmap',
-			'xla' => 'application/vnd.ms-excel',
-			'xlc' => 'application/vnd.ms-excel',
-			'xlm' => 'application/vnd.ms-excel',
-			'xls' => 'application/vnd.ms-excel',
-			'xlt' => 'application/vnd.ms-excel',
-			'xlw' => 'application/vnd.ms-excel',
-			'xof' => 'x-world/x-vrml',
-			'xpm' => 'image/x-xpixmap',
-			'xwd' => 'image/x-xwindowdump',
-			'z' => 'application/x-compress',
-			'zip' => 'application/zip'
-		);
-		if (isset($mimeTypes[strtolower($ext)])) {
-			$contentType = $mimeTypes[$ext];
-		}
-		return $contentType;
-	}
-
 	protected function getConnectorUrl()
 	{
 		if ($this->connectorUrl == null) {
@@ -1031,13 +882,18 @@ class YandexDiskMediaSource extends modMediaSource implements modMediaSourceInte
 		return $this->connectorUrl;
 	}
 
-	protected function getUrl($path)
-	{
-		return $this->getConnectorUrl() . '&' . http_build_query(array(
-			'action' => 'web/view',
-			'path' => $path,
-		), '', '&');
-	}
+    protected function getUrl($path)
+        // возможно это стоит переписать
+    {
+        return $this->getConnectorUrl() . '&' . http_build_query(
+            [
+                'action' => 'web/view',
+                'path' => $path,
+            ],
+            '',
+            '&'
+        );
+    }
 
 	protected function getCacheFileName($path, $type = 'thumbnail')
 	{

@@ -1,8 +1,20 @@
 Changelog file for Yandex Disk Media Source Provider.
 
+Yandex Disk Media Source Provider 0.3.0-dev
+====================================
+- Done method removeObject
+- Redone method getObjectUrl
+- Remove unused method getContentType
+- Done method renameObject
+- Done method uploadObjectsToContainer
+
 Yandex Disk Media Source Provider 0.2.0-dev
 ====================================
-- Done methods for work with catalogs: get file list, create, remove, rename
+- Redone methods of initialization and constructor
+- Done method getContainerList
+- Done method createContainer
+- Done method removeContainer
+- Done method renameContainer
 
 Yandex Disk Media Source Provider 0.1.0-dev
 ====================================
