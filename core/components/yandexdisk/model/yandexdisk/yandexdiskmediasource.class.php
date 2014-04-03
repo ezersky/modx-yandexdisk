@@ -1,23 +1,10 @@
 <?php
+
 require_once MODX_CORE_PATH . 'model/modx/sources/modmediasource.class.php';
 require_once MODX_CORE_PATH . 'components/yandexdisk/vendor/autoload.php';
 
-class yandexDiskMediaSource extends modMediaSource implements modMediaSourceInterface
+class YandexDiskMediaSource extends modMediaSource implements modMediaSourceInterface
 {
-	protected $loaderPaths;
-
-	/**
-	 * @var ElementPropertySession
-	 */
-	private $session;
-
-	/**
-	 * @var YandexDiskClient
-	 */
-	private $client;
-
-	private $connectorUrl;
-
     // must implement
     /*
     public function getContainerList($path) { return array(); }
@@ -40,12 +27,13 @@ class yandexDiskMediaSource extends modMediaSource implements modMediaSourceInte
     */
 
 	/**
-	 * Override the constructor to always force Yandex Disk sources not to be streams
+	 * Override the constructor to always force Yandex Disk sources to be streams
 	 * @param xPDO $xpdo
 	 */
 	public function __construct(xPDO &$xpdo)
 	{
 		parent::__construct($xpdo);
+
 		$this->set('is_stream', true);
 		$this->xpdo->lexicon->load('yandexdisk:default');
 	}

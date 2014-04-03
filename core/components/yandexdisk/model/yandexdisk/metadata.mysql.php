@@ -1,6 +1,7 @@
 <?php
-$xpdo_meta_map = array(
-	'modMediaSource' => array(
-		0 => 'yandexDiskMediaSource',
-	),
-);
+
+$xpdo_meta_map = [
+	'modMediaSource' => [
+		0 => 'YandexDiskMediaSource'
+	]
+];
