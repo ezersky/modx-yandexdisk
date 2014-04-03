@@ -4,13 +4,19 @@ require_once MODX_CORE_PATH . 'model/modx/sources/modmediasource.class.php';
 require_once "phar://" . dirname(__DIR__) . "/yandexdisk/yandex-sdk-0.1.1.phar/vendor/autoload.php";
 
 use Yandex\Disk\DiskClient;
+use Yandex\Disk\DiskException;
+use Yandex\Disk\DiskRequestException;
 
 class YandexDiskMediaSource extends modMediaSource implements modMediaSourceInterface
 {
-    // must implement
+    /**
+     * @var \Yandex\Disk\DiskClient
+     */
+    private $client;
+
     /*
-    public function getContainerList($path) { return array(); }
-    public function getObjectsInContainer($path) { return array(); }
+     * done function getContainerList($path) { return array(); }
+    inwork function getObjectsInContainer($path) { return array(); }
     public function createContainer($name,$parentContainer) { return true; }
     public function removeContainer($path) { return true; }
     public function renameContainer($oldPath,$newName) { return true; }
@@ -46,39 +52,14 @@ class YandexDiskMediaSource extends modMediaSource implements modMediaSourceInte
 	 */
 	public function initialize()
 	{
-		if (parent::initialize()) {
-			if (!$this->ctx) {
-				$this->ctx = &$this->xpdo->context;
-			}
-			$properties = $this->getPropertyList();
+        if (!parent::initialize()) {
+            return false;
+        }
 
-            $token = base64_encode('alroniiks:alro1788i');
-            $client = new DiskClient($token);
-            $client->setServiceScheme(DiskClient::HTTPS_SCHEME);
-
-            $si = $client->diskSpaceInfo();
-
-            print_r($si);
-            exit;
-
-			//$this->client = new webdav_client();
-            //$this->client->set_server($properties['server']); // ssl://webdav.yandex.ru
-            //$this->client->set_port($properties['port']); // 443
-            //$this->client->set_user($properties['username']); // alroniks
-            //$this->client->set_pass($properties['password']); // password
-            //$this->client->set_protocol(1); // use HTTP/1.1
-            //$this->client->set_debug(true); // enable debugging
-            
-//            if (!$this->client->open()){
-//                $this->xpdo->log(xPDO::LOG_LEVEL_ERROR, $this->lexicon('containerList', array(
-//        			'path' => $path,
-//    				'message' => 'Could not open server connection',
-//    			), 'error'));
-//            }
-//            if (!$this->client->check_webdav()){print 'Error: server does not support webdav or user/password may be wrong <br /> \r\n';exit;}
-
-		}
-		return false;
+        $properties = $this->getPropertyList();
+        // нужно переписать проперти на нормальный лад в конструкторе
+        $this->client = new DiskClient($properties['token']);
+        $this->client->setServiceScheme(DiskClient::HTTPS_SCHEME);
 	}
 
 	/**
@@ -88,134 +69,129 @@ class YandexDiskMediaSource extends modMediaSource implements modMediaSourceInte
 	 */
 	public function getContainerList($path)
 	{
-		$response = null;
 		try {
-            $response = $this->client->ls($path);
-            array_shift($response); // remove first item - itself
-            
-		} catch (Exception $e) {
-			$this->xpdo->log(xPDO::LOG_LEVEL_ERROR, $this->lexicon('containerList', array(
-				'path' => $path,
-				'message' => $e->getMessage(),
-			), 'error'));
-			return array();
+            $resources = $this->client->directoryContents($path);
+		} catch (DiskException $e) {
+			$this->xpdo->log(
+                xPDO::LOG_LEVEL_ERROR,
+                $this->lexicon(
+                    'containerList', [
+				        'path' => $path,
+				        'message' => $e->getMessage(),
+			        ],
+                    'error'
+                )
+            );
+			return [];
 		}
-        /*
-		if (!($response instanceof ResponseMetadata) || !isset($response->contents) || count($response->contents) == 0) {
-			return array();
-		}
-        */
-		$properties = $this->getPropertyList();
-		$useMultibyte = $this->ctx->getOption('use_multibyte', false);
-		$encoding = $this->ctx->getOption('modx_charset', 'UTF-8');
-		$hideFiles = !empty($properties['hideFiles']) && $properties['hideFiles'] != 'false' ? true : false;
-		$skipFiles = array_unique(array_filter(array_map('trim', explode(',', $this->getOption('skipFiles', $properties, '.svn,.git,_notes,.DS_Store,nbproject,.idea')))));
-		$directories = array();
-		$hasDirectoryPermissions = $this->hasPermission('directory_list');
-		$canSave = $this->checkPolicy('save');
-		$canRemove = $this->checkPolicy('remove');
-		$canCreate = $this->checkPolicy('create');
-		$directoryClasses = array(
-			'folder',
-		);
-		if ($this->hasPermission('directory_chmod') && $canSave) {
-			$directoryClasses[] = 'pchmod';
-		}
-		if ($this->hasPermission('directory_create') && $canCreate) {
-			$directoryClasses[] = 'pcreate';
-		}
-		if ($this->hasPermission('directory_remove') && $canRemove) {
-			$directoryClasses[] = 'premove';
-		}
-		if ($this->hasPermission('directory_update') && $canSave) {
-			$directoryClasses[] = 'pupdate';
-		}
-		if ($this->hasPermission('file_upload') && $canCreate) {
-			$directoryClasses[] = 'pupload';
-		}
-		if ($this->hasPermission('file_create') && $canCreate) {
-			$directoryClasses[] = 'pcreate';
-		}
-		$files = array();
-		$fileClasses = array(
-			'icon-file',
-		);
-		if ($this->hasPermission('file_remove') && $canRemove) {
-			$fileClasses[] = 'premove';
-		}
-		if ($this->hasPermission('file_update') && $canSave) {
-			$fileClasses[] = 'pupdate';
-		}
-		$hasFilePermissions = $this->hasPermission('file_list');
-		$assetsUrl = $this->ctx->getOption('assets_url', MODX_ASSETS_URL);
-        
-        //foreach ($response->contents as $entry) {
-        foreach ($response as $entry){
 
-			$baseName = urldecode(basename($entry['href']));
-			if (in_array($baseName, $skipFiles)) {
-				continue;
-			}
-			$entryPath = $entry['href'];
-            
-            if(isset($entry['resourcetype']) and $entry['resourcetype'] == 'collection') {
-			//if ($entry->is_dir) {
-				if ($hasDirectoryPermissions) {
-					$directories[$baseName] = array(
-						'id' => $entryPath,
-						'text' => $baseName,
-						'cls' => implode(' ', array_unique(array_filter(array_merge($directoryClasses, array($entry->icon))))),
-						'type' => 'dir',
-						'leaf' => false,
-						'path' => $entryPath,
-						'pathRelative' => $entryPath,
-						'perms' => '',
-						'menu' => array(),
-					);
-					$directories[$baseName]['menu'] = array(
-						'items' => $this->getListContextMenu(true, $directories[$baseName]),
-					);
-				}
-			} else {
-				if (!$hideFiles && $hasFilePermissions) {
-					$ext = pathinfo($baseName, PATHINFO_EXTENSION);
-					$ext = $useMultibyte ? mb_strtolower($ext, $encoding) : strtolower($ext);
-					$cls = array();
-					$cls[] = 'icon-' . $ext;
-					$cls[] = $entry->icon;
-					$qTip = '';
-					if ($entry->thumb_exists) {
-						$fileName = $this->getThumbnail($entryPath);
-						if ($fileName != '') {
-							$qTip = '<img src="' . $assetsUrl . $fileName . '" alt="' . $baseName . '" />';
-						}
-					}
-					$objectUrl = $this->getUrl($entryPath);
-					$files[$baseName] = array(
-						'id' => $entryPath,
-						'text' => $baseName,
-						'cls' => implode(' ', array_unique(array_filter(array_merge($fileClasses, $cls)))),
-						'type' => 'file',
-						'leaf' => true,
-						'qtip' => $qTip,
-						'page' => null,
-						'perms' => '',
-						'path' => $entryPath,
-						'pathRelative' => $entryPath,
-						'directory' => $path,
-						'url' => $objectUrl,
-						'file' => $this->ctx->getOption('base_url', MODX_BASE_URL) . $objectUrl,
-						'menu' => array(),
-					);
-					$files[$baseName]['menu'] = array(
-						'items' => $this->getListContextMenu(false, $files[$baseName]),
-					);
-				}
-			}
-		}
-		ksort($directories);
-		ksort($files);
-		return array_merge(array_values($directories), array_values($files));
+        $directories = [];
+        $files = [];
+
+        array_shift($resources);
+        foreach ($resources as $resource) {
+
+            $skiped = array_unique(
+                array_map(
+                    'trim',
+                    explode(',', $this->getOption('skiped', $this->getPropertyList()))
+                )
+            );
+
+            if (in_array($resource['displayName'], $skiped)) {
+                continue;
+            }
+
+            if ($resource['resourceType'] == 'dir' && $this->hasPermission('directory_list')) {
+
+                $classes = ['folder'];
+                if ($this->hasPermission('directory_chmod') && $this->checkPolicy('save')) {
+                    $classes[] = 'pchmod';
+                }
+                if ($this->hasPermission('directory_create') && $this->checkPolicy('create')) {
+                    $classes[] = 'pcreate';
+                }
+                if ($this->hasPermission('directory_remove') && $this->checkPolicy('remove')) {
+                    $classes[] = 'premove';
+                }
+                if ($this->hasPermission('directory_update') && $this->checkPolicy('save')) {
+                    $classes[] = 'pupdate';
+                }
+                if ($this->hasPermission('file_upload') && $this->checkPolicy('create')) {
+                    $classes[] = 'pupload';
+                }
+                if ($this->hasPermission('file_create') && $this->checkPolicy('create')) {
+                    $classes[] = 'pcreate';
+                }
+
+                $classes = implode(' ', array_unique($classes));
+
+                $directories[$resource['displayName']] = [
+                    'id' => $resource['href'],
+                    'text' => $resource['displayName'],
+                    'cls' => $classes,
+                    'type' => 'dir',
+                    'leaf' => false,
+                    'path' => $resource['href'],
+                    'pathRelative' => $resource['href'],
+                    'perms' => '',
+                    'menu' => [],
+                ];
+                $directories[$resource['displayName']]['menu'] = [
+                    'items' => $this->getListContextMenu(true, $directories[$resource['displayName']]),
+                ];
+            }
+            if ($resource['resourceType'] == 'file' && $this->hasPermission('file_list')) {
+
+                $classes = ['icon-file'];
+                if ($this->hasPermission('file_remove') && $this->checkPolicy('remove')) {
+                    $classes[] = 'premove';
+                }
+                if ($this->hasPermission('file_update') && $this->checkPolicy('save')) {
+                    $classes[] = 'pupdate';
+                }
+
+                $classes[] = "icon-" . mb_strtolower(pathinfo($resource['displayName'], PATHINFO_EXTENSION));
+                $classes = implode(' ', array_unique($classes));
+
+                if ($fileName = $this->getThumbnail($resource['href'])) {
+                    $tip = '<img
+                    src="' . $this->ctx->getOption('assets_url', MODX_ASSETS_URL) . $fileName . '"
+                    alt="' . $resource['displayName'] . '" />';
+                }
+
+                $url = $this->getUrl($resource['href']);
+
+                $files[$resource['displayName']] = [
+                    'id' => $resource['href'],
+                    'text' => $resource['displayName'],
+                    'cls' => $classes,
+                    'type' => 'file',
+                    'leaf' => true,
+                    'qtip' => $tip ?: '',
+                    'page' => null,
+                    'perms' => '',
+                    'path' => $resource['href'],
+                    'pathRelative' => $resource['href'],
+                    'directory' => $path,
+                    'url' => $url,
+                    'file' => $this->ctx->getOption('base_url', MODX_BASE_URL) . $url,
+                    'menu' => [],
+
+                ];
+                $files[$resource['displayName']]['menu'] = [
+                    'items' => $this->getListContextMenu(false, $files[$resource['displayName']])
+                ];
+            }
+        }
+
+        ksort($directories);
+        ksort($files);
+
+        return array_merge(
+            array_values($directories),
+            array_values($files)
+        );
 	}
 
 	/**
@@ -670,48 +646,29 @@ class YandexDiskMediaSource extends modMediaSource implements modMediaSourceInte
 	 */
 	public function getDefaultProperties()
 	{
-		$properties = array(
-			'server' => array(
-				'name' => 'server',
-				'type' => 'textfield',
-				'options' => '',
-				'value' => 'ssl:',
-			),
-			'port' => array(
-				'name' => 'port',
-				'type' => 'textfield',
-				'options' => '',
-				'value' => '443',
-			),
-			'username' => array(
-				'name' => 'username',
-				'type' => 'textfield',
-				'options' => '',
-				'value' => '',
-			),
-			'password' => array(
-				'name' => 'password',
-				'type' => 'password',
-				'options' => '',
-				'value' => '',
-			),
-			'imageExtensions' => array(
-				'name' => 'imageExtensions',
-				'type' => 'textfield',
-				'value' => 'jpg,jpeg,png,gif',
-			),
-			'skipFiles' => array(
-				'name' => 'skipFiles',
-				'type' => 'textfield',
-				'options' => '',
-				'value' => '.svn,.git,_notes,nbproject,.idea,.DS_Store',
-			)
-		);
-		foreach ($properties as $key => $property) {
-			$properties[$key]['desc'] = 'yandexdisk.prop.' . $property['name'];
-			$properties[$key]['lexicon'] = 'yandexdisk:properties';
-		}
-		return $properties;
+        return [
+            'token' => [
+                'name' => 'token',
+                'type' => 'textfield',
+                'value' => '',
+                'desc' => 'yandexdisk.prop.token',
+                'lexicon' => 'yandexdisk:properties'
+            ],
+//            'imageExtensions' => [
+//                'name' => 'imageExtensions',
+//                'type' => 'textfield',
+//                'value' => 'jpg,jpeg,png,gif',
+//                'desc' => 'yandexdisk.prop.imageExtensions',
+//                'lexicon' => 'yandexdisk:properties'
+//            ],
+//            'skipFiles' => [
+//                'name' => 'skipFiles',
+//                'type' => 'textfield',
+//                'value' => '.svn,.git,_notes,nbproject,.idea,.DS_Store',
+//                'desc' => 'yandexdisk.prop.skipFiles',
+//                'lexicon' => 'yandexdisk:properties'
+//            ]
+        ];
 	}
 
 	public function getListContextMenu($isDir, array $fileArray)
@@ -818,6 +775,7 @@ class YandexDiskMediaSource extends modMediaSource implements modMediaSourceInte
 
 	public function getThumbnail($path)
 	{
+        return ''; // заглушка пока что
 		$fileName = $this->getCacheFileName($path);
 		$filePath = $this->xpdo->getOption('assets_path', null, MODX_ASSETS_PATH) . $fileName;
 		if (file_exists($filePath)) {
@@ -1070,43 +1028,8 @@ class YandexDiskMediaSource extends modMediaSource implements modMediaSourceInte
 		return 'components/yandexdisk/' . $this->session->getUniqueKey() . '/' . $type . 's/' . substr($hash, 0, 2) . '/' . $hash . '.' . $ext;
 	}
 
-	protected function lexicon($key, array $params = array(), $category = 'source')
+	protected function lexicon($key, array $params = [], $category = 'source')
 	{
-		return $this->xpdo->lexicon('yandexdisk.' . $category . '.' . $key, $params);
-	}
-
-	protected function processToken(&$properties)
-	{
-		if (isset($_GET['id'], $_GET['a']) && $_GET['id'] == $this->get('id')) {
-			$this->xpdo->lexicon->load(isset($properties['authToken'], $properties['authToken']['lexicon']) ? $properties['authToken']['lexicon'] : 'yandexdisk:properties');
-			$consumerKey = isset($properties['consumerKey'], $properties['consumerKey']['value']) ? $properties['consumerKey']['value'] : '';
-			$consumerSecret = isset($properties['consumerSecret'], $properties['consumerSecret']['value']) ? $properties['consumerSecret']['value'] : '';
-			$accessType = isset($properties['accessType'], $properties['accessType']['value']) ? $properties['accessType']['value'] : '';
-			$authToken = isset($properties['authToken'], $properties['authToken']['value']) ? $properties['authToken']['value'] : '';
-			$locale = $this->xpdo->getOption('manager_language', null, 'en');
-			$editUrl = $this->xpdo->getOption('url_scheme', null, MODX_URL_SCHEME) . $this->xpdo->getOption('http_host', null, MODX_HTTP_HOST) . $this->xpdo->getOption('manager_url', null, MODX_MANAGER_URL) . 'index.php?a=' . intval($_GET['a']) . '&id=' . $this->get('id');
-			$url = '';
-			if (!empty($consumerKey) && !empty($consumerSecret) && !empty($accessType) && empty($authToken)) {
-				$session = new DropboxSession($consumerKey, $consumerSecret, $accessType, $locale);
-				$session->obtainRequestToken();
-				$url = $this->lexicon('authTokenUrl', array(
-					'url' => $session->getAuthorizeUrl($editUrl . '&oauth_token_secret=' . $session->getToken()->oauth_token_secret),
-				), 'prop');
-			}
-			$properties['authToken']['desc_trans'] = $this->lexicon('authToken', array(
-				'url' => $url,
-			), 'prop');
-			if ($this->xpdo->user->hasSessionContext('mgr') && empty($authToken) && isset($_GET['uid'], $_GET['oauth_token'], $_GET['oauth_token_secret'])) {
-				$session = new ElementPropertySession($_GET['oauth_token'] . ':' . $_GET['oauth_token_secret'], $consumerKey, $consumerSecret, $accessType, $locale);
-				$token = $session->obtainAccessToken();
-				if ($session->isLinked()) {
-					$properties['authToken']['value'] = $token->oauth_token . ':' . $token->oauth_token_secret;
-					$this->setProperties($properties, true);
-					$this->save();
-					$this->xpdo->sendRedirect($editUrl);
-				}
-			}
-		}
-		$properties['authToken']['desc_trans'] = str_replace('[[+url]]', '', $properties['authToken']['desc_trans']);
+		return $this->xpdo->lexicon("yandexdisk.$category.$key", $params);
 	}
 }
