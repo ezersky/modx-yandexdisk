@@ -1,7 +1,9 @@
 <?php
 
 require_once MODX_CORE_PATH . 'model/modx/sources/modmediasource.class.php';
-require_once MODX_CORE_PATH . 'components/yandexdisk/vendor/autoload.php';
+require_once "phar://" . dirname(__DIR__) . "/yandexdisk/yandex-sdk-0.1.1.phar/vendor/autoload.php";
+
+use Yandex\Disk\DiskClient;
 
 class YandexDiskMediaSource extends modMediaSource implements modMediaSourceInterface
 {
@@ -50,21 +52,30 @@ class YandexDiskMediaSource extends modMediaSource implements modMediaSourceInte
 			}
 			$properties = $this->getPropertyList();
 
-			$this->client = new webdav_client();
-            $this->client->set_server($properties['server']); // ssl://webdav.yandex.ru
-            $this->client->set_port($properties['port']); // 443
-            $this->client->set_user($properties['username']); // alroniks
-            $this->client->set_pass($properties['password']); // password
-            $this->client->set_protocol(1); // use HTTP/1.1
-            $this->client->set_debug(true); // enable debugging
+            $token = base64_encode('alroniiks:alro1788i');
+            $client = new DiskClient($token);
+            $client->setServiceScheme(DiskClient::HTTPS_SCHEME);
+
+            $si = $client->diskSpaceInfo();
+
+            print_r($si);
+            exit;
+
+			//$this->client = new webdav_client();
+            //$this->client->set_server($properties['server']); // ssl://webdav.yandex.ru
+            //$this->client->set_port($properties['port']); // 443
+            //$this->client->set_user($properties['username']); // alroniks
+            //$this->client->set_pass($properties['password']); // password
+            //$this->client->set_protocol(1); // use HTTP/1.1
+            //$this->client->set_debug(true); // enable debugging
             
-            if (!$this->client->open()){
-                $this->xpdo->log(xPDO::LOG_LEVEL_ERROR, $this->lexicon('containerList', array(
-        			'path' => $path,
-    				'message' => 'Could not open server connection',
-    			), 'error'));
-            }
-            if (!$this->client->check_webdav()){print 'Error: server does not support webdav or user/password may be wrong <br /> \r\n';exit;}
+//            if (!$this->client->open()){
+//                $this->xpdo->log(xPDO::LOG_LEVEL_ERROR, $this->lexicon('containerList', array(
+//        			'path' => $path,
+//    				'message' => 'Could not open server connection',
+//    			), 'error'));
+//            }
+//            if (!$this->client->check_webdav()){print 'Error: server does not support webdav or user/password may be wrong <br /> \r\n';exit;}
 
 		}
 		return false;

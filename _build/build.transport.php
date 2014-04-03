@@ -9,7 +9,7 @@
 
 set_time_limit(0);
 
-define('PKG_NAME', 'MODX-YandexDisk');
+define('PKG_NAME', 'YandexDisk');
 define('PKG_NAME_LOWER', strtolower(PKG_NAME));
 define('PKG_VERSION', '0.1.0');
 define('PKG_RELEASE','dev');
@@ -19,6 +19,7 @@ $sources = [
     'root' => $root,
     'build' => $root . '_build/',
     'data' => $root . '_build/data/',
+    'config' => $root . '_build/config/',
     'resolvers' => $root . '_build/resolvers/',
     'lexicon' => $root . 'core/components/' . PKG_NAME_LOWER . '/lexicon/',
     'docs' => $root . 'core/components/' . PKG_NAME_LOWER . '/docs/',
@@ -54,18 +55,18 @@ foreach ($settings as $setting) {
     $modx->log(modX::LOG_LEVEL_INFO, "Упакована системная настройка {$setting->key}");
 }
 
-$mediaSources = $sources['data'] . 'transport.core.mediaSources.php';
-foreach ($mediaSources as $source) {
-    $package->put(
-        $source,
-        $attributes = [
-            xPDOTransport::UNIQUE_KEY => 'id',
-            xPDOTransport::PRESERVE_KEYS => true,
-            xPDOTransport::UPDATE_OBJECT => false
-        ]
-    );
-    $modx->log(modX::LOG_LEVEL_INFO, "Упакован медиа ресурс {$source->name}");
-}
+//$mediaSources = $sources['data'] . 'transport.core.mediaSources.php';
+//foreach ($mediaSources as $source) {
+//    $package->put(
+//        $source,
+//        $attributes = [
+//            xPDOTransport::UNIQUE_KEY => 'id',
+//            xPDOTransport::PRESERVE_KEYS => true,
+//            xPDOTransport::UPDATE_OBJECT => false
+//        ]
+//    );
+//    $modx->log(modX::LOG_LEVEL_INFO, "Упакован медиа ресурс {$source->name}");
+//}
 
 $vehicle->resolve(
     'file',
@@ -76,12 +77,20 @@ $vehicle->resolve(
 );
 $modx->log(modX::LOG_LEVEL_INFO, "Файлы добавлены в пакет");
 
+foreach (['extensions'] as $resolver) {
+    if ($vehicle->resolve('php', ['source' => $sources['resolvers'] . "resolve.$resolver.php"])) {
+        $modx->log(modX::LOG_LEVEL_INFO, "Добавлен резолвер $resolver");
+    } else {
+        $modx->log(modX::LOG_LEVEL_INFO, "Не удалось добавить резолвер $resolver");
+    }
+}
+
 $builder->putVehicle($vehicle);
 $builder->setPackageAttributes(
     [
-        'changelog' => file_get_contents($sources['docs'] . 'changelog.md'),
-        'license' => file_get_contents($sources['docs'] . 'license.md'),
-        'readme' => file_get_contents($sources['docs'] . 'readme.md'),
+        'changelog' => file_get_contents($sources['docs'] . 'changelog.txt'),
+        'license' => file_get_contents($sources['docs'] . 'license.txt'),
+        'readme' => file_get_contents($sources['docs'] . 'readme.txt'),
 //        'setup-options' => array(
 //            'source' => $sources['build'].'setup.options.php',
 //        )

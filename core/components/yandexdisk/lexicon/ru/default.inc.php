@@ -1,4 +1,5 @@
 <?php
+
 $_lang['yandexdisk.source.name'] = 'Яндекс.Диск';
 $_lang['yandexdisk.source.description'] = 'Управление файлами Яндекс.Диска.';
 $_lang['yandexdisk.error.containerList'] = 'Error while retrieving container list for the path "[[+path]]" ([[+message]])';
