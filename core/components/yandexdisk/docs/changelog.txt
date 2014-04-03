@@ -1,5 +1,10 @@
 Changelog file for Yandex Disk Media Source Provider.
 
-Yandex Disk Media Source Provider 1.0.0-beta
+Yandex Disk Media Source Provider 0.2.0-dev
+====================================
+- Done methods for work with catalogs: get file list, create, remove, rename
+
+Yandex Disk Media Source Provider 0.1.0-dev
 ====================================
 - Initial release
+- Build script for package

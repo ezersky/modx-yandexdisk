@@ -11,7 +11,7 @@ set_time_limit(0);
 
 define('PKG_NAME', 'YandexDisk');
 define('PKG_NAME_LOWER', strtolower(PKG_NAME));
-define('PKG_VERSION', '0.1.0');
+define('PKG_VERSION', '0.2.0');
 define('PKG_RELEASE','dev');
 
 $root = dirname(__DIR__) . '/';
@@ -39,7 +39,12 @@ $modx->getService('error', 'error.modError');
 $modx->loadClass('transport.modPackageBuilder', '', false, true);
 $builder = new modPackageBuilder($modx);
 $builder->createPackage(PKG_NAME_LOWER, PKG_VERSION, PKG_RELEASE);
-//$builder->registerNamespace(PKG_NAME_LOWER, false, true, PKG_NAMESPACE_PATH);
+$builder->registerNamespace(
+    PKG_NAME_LOWER,
+    false,
+    true,
+    '{core_path}' . join('/', ['components', PKG_NAME_LOWER, ''])
+);
 
 $settings = require_once $sources['data'] . 'transport.settings.php';
 foreach ($settings as $setting) {

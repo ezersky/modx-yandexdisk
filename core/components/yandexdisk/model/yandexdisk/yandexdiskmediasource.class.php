@@ -5,7 +5,6 @@ require_once "phar://" . dirname(__DIR__) . "/yandexdisk/yandex-sdk-0.1.1.phar/v
 
 use Yandex\Disk\DiskClient;
 use Yandex\Disk\DiskException;
-use Yandex\Disk\DiskRequestException;
 
 class YandexDiskMediaSource extends modMediaSource implements modMediaSourceInterface
 {
@@ -16,11 +15,13 @@ class YandexDiskMediaSource extends modMediaSource implements modMediaSourceInte
 
     /*
      * done function getContainerList($path) { return array(); }
-    inwork function getObjectsInContainer($path) { return array(); }
-    public function createContainer($name,$parentContainer) { return true; }
-    public function removeContainer($path) { return true; }
-    public function renameContainer($oldPath,$newName) { return true; }
-    public function updateContainer() { return true; }
+     * done function createContainer($name,$parentContainer) { return true; }
+     * done function removeContainer($path) { return true; }
+     * done function renameContainer($oldPath,$newName) { return true; }
+
+    ??? public function updateContainer() { return true; }
+    public function getObjectsInContainer($path) { return array(); }
+
     public function uploadObjectsToContainer($container,array $objects = array()) { return true; }
     public function getObjectContents($objectPath) { return true; }
     public function updateObject($objectPath,$content) { return true; }
@@ -34,24 +35,24 @@ class YandexDiskMediaSource extends modMediaSource implements modMediaSourceInte
     public function getDefaultProperties() { return array(); }
     */
 
-	/**
-	 * Override the constructor to always force Yandex Disk sources to be streams
-	 * @param xPDO $xpdo
-	 */
-	public function __construct(xPDO &$xpdo)
-	{
-		parent::__construct($xpdo);
+    /**
+     * Override the constructor to always force Yandex Disk sources to be streams
+     * @param xPDO $xpdo
+     */
+    public function __construct(xPDO &$xpdo)
+    {
+        parent::__construct($xpdo);
 
-		$this->set('is_stream', true);
-		$this->xpdo->lexicon->load('yandexdisk:default');
-	}
+        $this->set('is_stream', true);
+        $this->xpdo->lexicon->load('yandexdisk:default');
+    }
 
-	/**
-	 * Initialize the source
-	 * @return boolean
-	 */
-	public function initialize()
-	{
+    /**
+     * Initialize the source
+     * @return boolean
+     */
+    public function initialize()
+    {
         if (!parent::initialize()) {
             return false;
         }
@@ -60,30 +61,30 @@ class YandexDiskMediaSource extends modMediaSource implements modMediaSourceInte
         // нужно переписать проперти на нормальный лад в конструкторе
         $this->client = new DiskClient($properties['token']);
         $this->client->setServiceScheme(DiskClient::HTTPS_SCHEME);
-	}
+    }
 
-	/**
-	 * Return an array of containers at this current level in the container structure. Used for the tree navigation on the files tree
-	 * @param string $path
-	 * @return array
-	 */
-	public function getContainerList($path)
-	{
-		try {
+    /**
+     * Return an array of containers at this current level in the container structure. Used for the tree navigation on the files tree
+     * @param string $path
+     * @return array
+     */
+    public function getContainerList($path)
+    {
+        try {
             $resources = $this->client->directoryContents($path);
-		} catch (DiskException $e) {
-			$this->xpdo->log(
+        } catch (DiskException $e) {
+            $this->xpdo->log(
                 xPDO::LOG_LEVEL_ERROR,
                 $this->lexicon(
-                    'containerList', [
-				        'path' => $path,
-				        'message' => $e->getMessage(),
-			        ],
+                    'container.list', [
+                        'path' => $path,
+                        'message' => $e->getMessage(),
+                    ],
                     'error'
                 )
             );
-			return [];
-		}
+            return [];
+        }
 
         $directories = [];
         $files = [];
@@ -176,8 +177,7 @@ class YandexDiskMediaSource extends modMediaSource implements modMediaSourceInte
                     'directory' => $path,
                     'url' => $url,
                     'file' => $this->ctx->getOption('base_url', MODX_BASE_URL) . $url,
-                    'menu' => [],
-
+                    'menu' => []
                 ];
                 $files[$resource['displayName']]['menu'] = [
                     'items' => $this->getListContextMenu(false, $files[$resource['displayName']])
@@ -192,7 +192,7 @@ class YandexDiskMediaSource extends modMediaSource implements modMediaSourceInte
             array_values($directories),
             array_values($files)
         );
-	}
+    }
 
 	/**
 	 * Return a detailed list of objects in a specific path. Used for thumbnails in the Browser
@@ -308,81 +308,105 @@ class YandexDiskMediaSource extends modMediaSource implements modMediaSourceInte
 		return $files;
 	}
 
-	/**
-	 * Create a container at the passed location with the passed name
-	 * @param string $name
-	 * @param string $parentContainer
-	 * @return boolean
-	 */
-	public function createContainer($name, $parentContainer)
-	{
-		$response = null;
-		$path = rtrim($parentContainer, '/') . '/' . trim($name, '/');
-		
-		$response = $this->client->mkcol($path);
+    /**
+     * Create a container at the passed location with the passed name
+     * @param string $name
+     * @param string $parentContainer
+     * @return boolean
+     */
+    public function createContainer($name, $parentContainer)
+    {
+        try {
+            $path = rtrim($parentContainer, '/') . '/' . trim($name, '/');
+            $this->client->createDirectory($path);
+        } catch (DiskException $e) {
+            $this->xpdo->log(
+                xPDO::LOG_LEVEL_ERROR,
+                $this->lexicon(
+                    'container.create',
+                    [
+                        'path' => $path,
+                        'message' => $e->getMessage()
+                    ],
+                    'error'
+                )
+            );
+            $this->addError('name', $this->xpdo->lexicon('file_folder_err_create'));
 
-		if($response != '201'){
-			$this->xpdo->log(xPDO::LOG_LEVEL_ERROR, $this->lexicon('createContainer', array(
-				'path' => $path,
-				'message' => $e->getMessage(),
-			), 'error'));
-			$this->addError('name', $this->xpdo->lexicon('file_folder_err_create'));
-			return false;
-		}
-		$this->xpdo->logManagerAction('directory_create', '', $path);
-		return true;
-	}
+            return false;
+        }
 
-	/**
-	 * Remove the specified container
-	 * @param string $path
-	 * @return boolean
-	 */
-	public function removeContainer($path)
-	{
-		$response = null;
-		
-		$response = $this->client->delete($path);
+        $this->xpdo->logManagerAction('directory_create', '', $path);
 
-		if($response['status'] != '200'){
-			$this->xpdo->log(xPDO::LOG_LEVEL_ERROR, $this->lexicon('removeContainer', array(
-				'path' => $path,
-				'message' => $e->getMessage(),
-			), 'error'));
-			$this->addError('path', $this->xpdo->lexicon('file_folder_err_remove'));
-			return false;
-		}
-		$this->xpdo->logManagerAction('directory_remove', '', $path);
-		return true;
-	}
+        return true;
+    }
 
-	/**
-	 * Rename a container
-	 * @param string $oldPath
-	 * @param string $newName
-	 * @return boolean
-	 */
-	public function renameContainer($oldPath, $newName)
-	{
-		$response = null;
-		
-		if(dirname($oldPath) == '/') // root
-			$response = $this->client->move($oldPath, dirname($oldPath) . $newName, 1);
-		else
-			$response = $this->client->move($oldPath, dirname($oldPath) .'/'. $newName, 1);
+    /**
+     * Remove the specified container
+     * @param string $path
+     * @return boolean
+     */
+    public function removeContainer($path)
+    {
+        try {
+            $this->client->delete($path);
+        } catch (DiskException $e) {
+            $this->xpdo->log(
+                xPDO::LOG_LEVEL_ERROR,
+                $this->lexicon(
+                    'container.remove',
+                    [
+                        'path' => $path,
+                        'message' => $e->getMessage(),
+                    ],
+                    'error'
+                )
+            );
+            $this->addError('path', $this->xpdo->lexicon('file_folder_err_remove'));
 
-		if($response != 201){
-			$this->xpdo->log(xPDO::LOG_LEVEL_ERROR, $this->lexicon('renameContainer', array(
-				'path' => $oldPath,
-				'name' => $newName,
-				'message' => $e->getMessage(),
-			), 'error'));
-			$this->addError('name', $this->xpdo->lexicon('file_folder_err_rename'));
-			return false;
-		}
-		$this->xpdo->logManagerAction('directory_rename', '', $oldPath);
-		return true;
-	}
+            return false;
+        }
+
+        $this->xpdo->logManagerAction('directory_remove', '', $path);
+
+        return true;
+    }
+
+    /**
+     * Rename a container
+     * @param string $old
+     * @param string $new
+     * @return boolean
+     */
+    public function renameContainer($old, $new)
+    {
+        try {
+            $new = dirname($old) == '/'
+                ? dirname($old) . $new
+                : join('/', [dirname($old), $new]);
+            $this->client->move($old, $new);
+        } catch (DiskException $e) {
+            $this->xpdo->log(
+                xPDO::LOG_LEVEL_ERROR,
+                $this->lexicon(
+                    'container.rename',
+                    [
+                        'path' => $old,
+                        'name' => $new,
+                        'message' => $e->getMessage(),
+                    ],
+                    'error'
+                )
+            );
+            $this->addError('name', $this->xpdo->lexicon('file_folder_err_rename'));
+
+            return false;
+        }
+
+        $this->xpdo->logManagerAction('directory_rename', '', $old);
+
+        return true;
+    }
 
 	/**
 	 * Upload objects to a specific container
