@@ -24,6 +24,7 @@ $sources = [
     'lexicon' => $root . 'core/components/' . PKG_NAME_LOWER . '/lexicon/',
     'docs' => $root . 'core/components/' . PKG_NAME_LOWER . '/docs/',
     'core' => $root . 'core/components/' . PKG_NAME_LOWER,
+    'assets' => $root . 'assets/components/' . PKG_NAME_LOWER
 ];
 
 require_once $sources['build'] . 'build.config.php';
@@ -43,41 +44,24 @@ $builder->registerNamespace(
     PKG_NAME_LOWER,
     false,
     true,
-    '{core_path}' . join('/', ['components', PKG_NAME_LOWER, ''])
+    '{core_path}' . join('/', ['components', PKG_NAME_LOWER, '']),
+    '{assets_path}' . join('/', ['components', PKG_NAME_LOWER, ''])
 );
 
-$settings = require_once $sources['data'] . 'transport.settings.php';
-foreach ($settings as $setting) {
-    $vehicle = $builder->createVehicle(
-        $setting,
-        [
-            xPDOTransport::UNIQUE_KEY => 'key',
-            xPDOTransport::PRESERVE_KEYS => true,
-            xPDOTransport::UPDATE_OBJECT => true
-        ]
-    );
-    $builder->putVehicle($vehicle);
-    $modx->log(modX::LOG_LEVEL_INFO, "Упакована системная настройка {$setting->key}");
-}
-
-//$mediaSources = $sources['data'] . 'transport.core.mediaSources.php';
-//foreach ($mediaSources as $source) {
-//    $package->put(
-//        $source,
-//        $attributes = [
-//            xPDOTransport::UNIQUE_KEY => 'id',
-//            xPDOTransport::PRESERVE_KEYS => true,
-//            xPDOTransport::UPDATE_OBJECT => false
-//        ]
-//    );
-//    $modx->log(modX::LOG_LEVEL_INFO, "Упакован медиа ресурс {$source->name}");
-//}
-
+$vehicle = $builder->createVehicle(new xPDOObject($modx), []);
+// тут ошибка при сборке и это плохо
 $vehicle->resolve(
     'file',
     [
         'source' => $sources['core'],
         'target' => "return MODX_CORE_PATH . 'components/';"
+    ]
+);
+$vehicle->resolve(
+    'file',
+    [
+        'source' => $sources['assets'],
+        'target' => "return MODX_ASSETS_PATH . 'components/';"
     ]
 );
 $modx->log(modX::LOG_LEVEL_INFO, "Файлы добавлены в пакет");
@@ -95,10 +79,7 @@ $builder->setPackageAttributes(
     [
         'changelog' => file_get_contents($sources['docs'] . 'changelog.txt'),
         'license' => file_get_contents($sources['docs'] . 'license.txt'),
-        'readme' => file_get_contents($sources['docs'] . 'readme.txt'),
-//        'setup-options' => array(
-//            'source' => $sources['build'].'setup.options.php',
-//        )
+        'readme' => file_get_contents($sources['docs'] . 'readme.txt')
     ]
 );
 $modx->log(modX::LOG_LEVEL_INFO, "Добавлены атрибуты пакета");
@@ -147,5 +128,3 @@ $modx->cacheManager->refresh();
 $modx->log(modX::LOG_LEVEL_INFO, "Кеш очищен");
 
 exit();
-
-// TODO: добавить автоматический запуск композера при установке с предварительной очисткой

@@ -7,6 +7,20 @@ Yandex Disk Media Source Provider 0.3.0-dev
 - Remove unused method getContentType
 - Done method renameObject
 - Done method uploadObjectsToContainer
+- Add method getDirectoryContextMenu
+- Add method getFileContextMenu
+- Remove method getListContextMenu, refactoring
+- Done method moveObject
+- Add default setting images for media source of disk
+- Improve structure and naming in lexicon files
+- Done method getObjectContents
+- Done method getObjectsInContainer
+- Set propertyList as class property
+- Updated methods: prepareSrcForThumb, getThumbnail, getConnectorUrl, getUrl, getCachedFileName, but they should be refactored
+- Refactored method lexicon
+- Added connector for media sources, based on Yandex Disk
+- Remove settings from builder, because its not used
+- Added resolver for assets folder
 
 Yandex Disk Media Source Provider 0.2.0-dev
 ====================================

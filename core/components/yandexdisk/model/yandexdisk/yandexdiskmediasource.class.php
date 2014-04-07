@@ -13,22 +13,21 @@ class YandexDiskMediaSource extends modMediaSource implements modMediaSourceInte
      */
     private $client;
 
+    /**
+     * @var array
+     */
+    private $propertyList;
+
     /*
      *
     public function createObject($objectPath,$name,$content) { return true; }
-    public function moveObject($from,$to,$point = 'append') { return true; }
+    ??? public function updateObject($objectPath,$content) { return true; }
 
     ??? public function updateContainer() { return true; }
-    ??? public function updateObject($objectPath,$content) { return true; }
-    public function getObjectsInContainer($path) { return array(); }
-
-    public function uploadObjectsToContainer($container,array $objects = array()) { return true; }
-    public function getObjectContents($objectPath) { return true; }
 
     public function getBasePath($object = '') { return ''; }
     public function getBaseUrl($object = '') { return ''; }
     public function getObjectUrl($object = '') { return ''; }
-
     */
 
     /**
@@ -52,11 +51,11 @@ class YandexDiskMediaSource extends modMediaSource implements modMediaSourceInte
         if (!parent::initialize()) {
             return false;
         }
-
-        $properties = $this->getPropertyList();
-        // нужно переписать проперти на нормальный лад в конструкторе
-        $this->client = new DiskClient($properties['token']);
+        $this->propertyList = $this->getPropertyList();
+        $this->client = new DiskClient($this->propertyList['token']);
         $this->client->setServiceScheme(DiskClient::HTTPS_SCHEME);
+
+        return true;
     }
 
     /**
@@ -91,7 +90,7 @@ class YandexDiskMediaSource extends modMediaSource implements modMediaSourceInte
             $skiped = array_unique(
                 array_map(
                     'trim',
-                    explode(',', $this->getOption('skiped', $this->getPropertyList()))
+                    explode(',', $this->getOption('skiped', $this->propertyList))
                 )
             );
 
@@ -135,7 +134,7 @@ class YandexDiskMediaSource extends modMediaSource implements modMediaSourceInte
                     'menu' => [],
                 ];
                 $directories[$resource['displayName']]['menu'] = [
-                    'items' => $this->getListContextMenu(true, $directories[$resource['displayName']]),
+                    'items' => $this->getDirectoryContextMenu(),
                 ];
             }
             if ($resource['resourceType'] == 'file' && $this->hasPermission('file_list')) {
@@ -162,6 +161,8 @@ class YandexDiskMediaSource extends modMediaSource implements modMediaSourceInte
                 $files[$resource['displayName']] = [
                     'id' => $resource['href'],
                     'text' => $resource['displayName'],
+                    'lastmod' => strtotime($resource['lastModified']),
+                    'size' => $resource['contentLength'],
                     'cls' => $classes,
                     'type' => 'file',
                     'leaf' => true,
@@ -176,7 +177,7 @@ class YandexDiskMediaSource extends modMediaSource implements modMediaSourceInte
                     'menu' => []
                 ];
                 $files[$resource['displayName']]['menu'] = [
-                    'items' => $this->getListContextMenu(false, $files[$resource['displayName']])
+                    'items' => $this->getFileContextMenu()
                 ];
             }
         }
@@ -190,119 +191,78 @@ class YandexDiskMediaSource extends modMediaSource implements modMediaSourceInte
         );
     }
 
-	/**
-	 * Return a detailed list of objects in a specific path. Used for thumbnails in the Browser
-	 * @param string $path
-	 * @return array
-	 */
-	public function getObjectsInContainer($path)
-	{
-		$response = null;
-        
-        echo 'rrrrr';
-		try {
-			$response = $this->client->getMetadata($path);
-		} catch (Exception $e) {
-			$this->xpdo->log(xPDO::LOG_LEVEL_ERROR, $this->lexicon('objectsInContainer', array(
-				'path' => $path,
-				'message' => $e->getMessage(),
-			), 'error'));
-			return array();
-		}
-		if (!($response instanceof ResponseMetadata) || !isset($response->contents) || count($response->contents) == 0) {
-			return array();
-		}
-		$useMultibyte = $this->ctx->getOption('use_multibyte', false);
-		$encoding = $this->ctx->getOption('modx_charset', 'UTF-8');
-		$allowedFileTypes = $this->getOption('allowedFileTypes', $this->properties, '');
-		$allowedFileTypes = !empty($allowedFileTypes) && is_string($allowedFileTypes) ? explode(',', $allowedFileTypes) : $allowedFileTypes;
-		$allowedFileTypes = is_array($allowedFileTypes) ? array_unique(array_filter(array_map('trim', $allowedFileTypes))) : array();
-		$imageExtensions = $this->getOption('imageExtensions', $this->properties, 'jpg,jpeg,png,gif');
-		$imageExtensions = explode(',', $imageExtensions);
-		$skipFiles = array_unique(array_filter(array_map('trim', explode(',', $this->getOption('skipFiles', $this->properties, '.svn,.git,_notes,.DS_Store,nbproject,.idea')))));
-		$files = array();
-		foreach ($response->contents as $entry) {
-			if ($entry->is_dir) {
-				continue;
-			}
-			$entryPath = $entry->path;
-			$fileName = basename($entryPath);
-			if (in_array($fileName, $skipFiles)) {
-				continue;
-			}
-			$ext = pathinfo($fileName, PATHINFO_EXTENSION);
-			$ext = $useMultibyte ? mb_strtolower($ext, $encoding) : strtolower($ext);
-			if (!empty($allowedFileTypes) && !in_array($ext, $allowedFileTypes)) {
-				continue;
-			}
-			$objectUrl = $this->getUrl($entryPath);
-			$thumbWidth = $this->ctx->getOption('filemanager_thumb_width', 80);
-			$thumbHeight = $this->ctx->getOption('filemanager_thumb_height', 60);
-			$file = array(
-				'id' => $entryPath,
-				'name' => $fileName,
-				'url' => $entryPath,
-				'relativeUrl' => $entryPath,
-				'fullRelativeUrl' => $objectUrl,
-				'ext' => $ext,
-				'pathname' => $entryPath,
-				'lastmod' => $entry->modified,
-				'leaf' => true,
-				'size' => $entry->bytes,
-				'thumb' => $this->ctx->getOption('manager_url', MODX_MANAGER_URL) . 'templates/default/images/restyle/nopreview.jpg',
-				'thumbWidth' => $thumbWidth,
-				'thumbHeight' => $thumbHeight,
-				'menu' => array(
-					array(
-						'text' => $this->xpdo->lexicon('file_remove'),
-						'handler' => 'this.removeFile',
-					),
-				),
-			);
-			if (in_array($ext, $imageExtensions)) {
-				$imageWidth = $this->ctx->getOption('filemanager_image_width', 400);
-				$imageHeight = $this->ctx->getOption('filemanager_image_height', 300);
-				/*$size = @getimagesize($objectUrl);
-				if (is_array($size)) {
-					$imageWidth = $size[0] > 800 ? 800 : $size[0];
-					$imageHeight = $size[1] > 600 ? 600 : $size[1];
-				}*/
-				if ($thumbWidth > $imageWidth) {
-					$thumbWidth = $imageWidth;
-				}
-				if ($thumbHeight > $imageHeight) {
-					$thumbHeight = $imageHeight;
-				}
-				$objectUrl = urlencode($this->ctx->getOption('base_url', MODX_BASE_URL) . $objectUrl);
-				$thumbUrl = '';
-				if ($entry->thumb_exists) {
-					$thumbUrl = $this->getThumbnail($entryPath);
-				}
-				$thumbUrl = !empty($thumbUrl) ? ($this->ctx->getOption('assets_url', MODX_ASSETS_URL) . $thumbUrl) : $objectUrl;
-				$thumbParams = array(
-					'f' => $this->getOption('thumbnailType', $this->properties, 'png'),
-					'q' => $this->getOption('thumbnailQuality', $this->properties, 90),
-					'HTTP_MODAUTH' => $this->xpdo->user->getUserToken($this->xpdo->context->get('key')),
-					'wctx' => $this->ctx->get('key'),
-					'source' => $this->get('id'),
-				);
-				$thumbQuery = http_build_query(array_merge($thumbParams, array(
-					'src' => $thumbUrl,
-					'w' => $thumbWidth,
-					'h' => $thumbHeight,
-				)));
-				$imageQuery = http_build_query(array_merge($thumbParams, array(
-					'src' => $objectUrl,
-					'w' => $imageWidth,
-					'h' => $imageHeight,
-				)));
-				$file['thumb'] = $this->ctx->getOption('connectors_url', MODX_CONNECTORS_URL) . 'system/phpthumb.php?' . urldecode($thumbQuery);
-				$file['image'] = $this->ctx->getOption('connectors_url', MODX_CONNECTORS_URL) . 'system/phpthumb.php?' . urldecode($imageQuery);
-			}
-			$files[] = $file;
-		}
-		return $files;
-	}
+    /**
+     * Return a detailed list of objects in a specific path. Used for thumbnails in the Browser
+     * @param string $path
+     * @return array
+     */
+    public function getObjectsInContainer($path)
+    {
+        $items = $this->getContainerList($path);
+
+        if (!$items) {
+            $this->xpdo->log(
+                xPDO::LOG_LEVEL_ERROR,
+                $this->lexicon(
+                    'container.objects',
+                    ['path' => $path],
+                    'error'
+                )
+            );
+            return [];
+        }
+
+        $files = [];
+        foreach ($items as $item) {
+            if ($item['type'] == 'dir') {
+                continue;
+            }
+
+            $ext = strtolower(@pathinfo($item['text'], PATHINFO_EXTENSION));
+
+            $files[$item['id']] = array_merge(
+                $item,
+                [
+                    'name' => $item['text'],
+                    'relativeUrl' => $item['pathRelative'],
+                    'fullRelativeUrl' => $this->getUrl($item['path']),
+                    'pathname' => $item['path'],
+                    'ext' => $ext,
+                    'thumb' => $this->ctx->getOption('manager_url', MODX_MANAGER_URL) . 'templates/default/images/restyle/nopreview.jpg',
+                    'thumbWidth' => $this->ctx->getOption('filemanager_thumb_width', 80),
+                    'thumbHeight' => $this->ctx->getOption('filemanager_thumb_height', 60),
+                    'menu' => [
+                        [
+                            'text' => $this->xpdo->lexicon('file_remove'),
+                            'handler' => 'this.removeFile',
+                        ]
+                    ]
+                ]
+            );
+
+            $images = explode(',', $this->getOption('images', $this->propertyList, 'jpg,jpeg,png,gif'));
+            if (in_array($ext, $images)) {
+                try {
+                    $thumb = $this->client->getImagePreview($item['path'], '80x60');
+                    $files[$item['id']]['thumb'] = 'data:' . $item['contentType'] . ';base64,' . base64_encode($thumb['body']);
+                } catch (DiskException $e) {
+                    $this->xpdo->log(
+                        xPDO::LOG_LEVEL_ERROR,
+                        $this->lexicon(
+                            'object.thumbnail',
+                            [
+                                'path' => $path,
+                                'message' => $e->getMessage()
+                            ],
+                            'error'
+                        )
+                    );
+                }
+            }
+        }
+
+        return array_values($files);
+    }
 
     /**
      * Create a container at the passed location with the passed name
@@ -452,7 +412,7 @@ class YandexDiskMediaSource extends modMediaSource implements modMediaSourceInte
                     $this->xpdo->log(
                         xPDO::LOG_LEVEL_ERROR,
                         $this->lexicon(
-                            'uploadObjectsToContainer',
+                            'container.upload',
                             [
                                 'path' => $container,
                                 'message' => $e->getMessage(),
@@ -477,58 +437,68 @@ class YandexDiskMediaSource extends modMediaSource implements modMediaSourceInte
         );
 
         $this->xpdo->logManagerAction('file_upload', '', $container);
+
         return true;
     }
 
-	/**
-	 * Get the contents of an object
-	 * @param string $objectPath
-	 * @return boolean
-	 */
-	public function getObjectContents($objectPath)
-	{
-		$response = null;
-		try {
-			$response = $this->client->getMetadata($objectPath, false);
-		} catch (Exception $e) {
-			$this->xpdo->log(xPDO::LOG_LEVEL_ERROR, $this->lexicon('getObjectContents', array(
-				'path' => $objectPath,
-				'message' => $e->getMessage(),
-			), 'error'));
-			return false;
-		}
-		if (!($response instanceof ResponseMetadata)) {
-			return false;
-		}
-		$properties = $this->getPropertyList();
-		$imageExtensions = $this->getOption('imageExtensions', $properties, 'jpg,jpeg,png,gif');
-		$imageExtensions = explode(',', $imageExtensions);
-		$fileExtension = pathinfo($objectPath, PATHINFO_EXTENSION);
-		return array(
-			'name' => $objectPath,
-			'basename' => basename($objectPath),
-			'path' => $objectPath,
-			'size' => $response->size,
-			'last_accessed' => '',
-			'last_modified' => $response->modified,
-			'content' => $this->getContent($objectPath),
-			'image' => in_array($fileExtension, $imageExtensions) ? true : false,
-			'is_writable' => false,
-			'is_readable' => true,
-		);
-	}
+    /**
+     * Get the contents of an object
+     * @param string $path
+     * @return boolean
+     */
+    public function getObjectContents($path)
+    {
+        try {
+            $file = $this->client->getFile($path);
 
-	/**
-	 * Update the contents of a specific object
-	 * @param string $objectPath
-	 * @param string $content
-	 * @return boolean
-	 */
-	public function updateObject($objectPath, $content)
-	{
-		// TODO: Need to be implemented
-		return true;
-	}
+        } catch (DiskException $e) {
+            $this->xpdo->log(
+                xPDO::LOG_LEVEL_ERROR,
+                $this->lexicon(
+                    'object.content',
+                    [
+                        'path' => $path,
+                        'message' => $e->getMessage(),
+                    ],
+                    'error'
+                )
+            );
+
+            return [];
+        }
+
+        $images = explode(',', $this->getOption('images', $this->propertyList, 'jpg,jpeg,png,gif'));
+        $ext = @pathinfo($path, PATHINFO_EXTENSION);
+
+        $cachedFile = $this->xpdo->getOption('assets_path', null, MODX_ASSETS_PATH) . $this->getCachedFileName($path, 'content');
+        $this->xpdo->cacheManager->writeFile($cachedFile, $file['body']);
+
+        return [
+            'name' => $path,
+            'basename' => basename($path),
+            'path' => $cachedFile,
+            'size' => $file['headers']['Content-Length'],
+            'last_accessed' => '',
+            'last_modified' => strtotime($file['headers']['Last-Modified']),
+            'content' => $file['body'],
+            'image' => in_array($ext, $images) ? true : false,
+            'is_writable' => false,
+            'is_readable' => true
+        ];
+    }
+
+    /**
+     * Update the contents of a specific object
+     * @param string $objectPath
+     * @param string $content
+     * @return boolean
+     */
+    public function updateObject($objectPath, $content)
+    {
+        // TODO: Need to be implemented
+        // download or check if exist, change, upload to disk
+        return true;
+    }
 
     /**
      * Create an object from a path
@@ -539,8 +509,8 @@ class YandexDiskMediaSource extends modMediaSource implements modMediaSourceInte
      */
     public function createObject($path, $name, $content)
     {
-        print_r($name);
-        print_r($content);
+        // TODO: need to be implemented
+        // create local file, save, than upload to disk
 
         file_put_contents('php://tmp', $content);
         try {
@@ -613,7 +583,7 @@ class YandexDiskMediaSource extends modMediaSource implements modMediaSourceInte
             $this->xpdo->log(
                 xPDO::LOG_LEVEL_ERROR,
                 $this->lexicon(
-                    'removeObject',
+                    'object.rename',
                     [
                         'path' => $old,
                         'name' => $new,
@@ -649,47 +619,56 @@ class YandexDiskMediaSource extends modMediaSource implements modMediaSourceInte
         return join('', $data);
     }
 
-	/**
-	 * Prepares the output URL when the Source is being used in an Element
-	 * @param string $value
-	 * @return string
-	 */
-	public function prepareOutputUrl($value)
-	{
-		return $this->getObjectUrl($value);
-	}
+//	/**
+//	 * Prepares the output URL when the Source is being used in an Element
+//	 * @param string $value
+//	 * @return string
+//	 */
+//	public function prepareOutputUrl($value)
+//	{
+//		return $this->getObjectUrl($value);
+//	}
 
-	/**
-	 * Move a file or folder to a specific location
-	 * @param string $from The location to move from
-	 * @param string $to The location to move to
-	 * @param string $point The type of move; append, above, below
-	 * @return boolean
-	 */
-	public function moveObject($from, $to, $point = 'append')
-	{
+    /**
+     * Move a file or folder to a specific location
+     * @param string $from The location to move from
+     * @param string $to The location to move to
+     * @param string $point The type of move; append, above, below
+     * @return boolean
+     */
+    public function moveObject($from, $to, $point = 'append')
+    {
+        switch ($point) {
+            case 'append':
+                $to .= basename($from);
+                break;
+            case 'above':
+            case 'below':
+                $to = dirname($to) . basename($from);
+                break;
+        }
 
-		$response = null;
+        try {
+            $this->client->move($from, $to);
+        } catch (DiskException $e) {
+            $this->xpdo->log(
+                xPDO::LOG_LEVEL_ERROR,
+                $this->lexicon(
+                    'object.move',
+                    [
+                        'path' => $from,
+                        'newPath' => $to,
+                        'message' => $e->getMessage(),
+                    ],
+                    'error'
+                )
+            );
 
-		if(dirname($to) == '/') // root
-			$response = $this->client->move($from, $to . basename($from), 1);
-		else
-			$response = $this->client->move($from, $to . '/' . basename($from), 1);
+            return false;
+        }
 
-		echo $from, '|',$to, '|',dirname($to);
-		print_r($response);
-		exit;
-	
-		if($response != 201){
-			$this->xpdo->log(xPDO::LOG_LEVEL_ERROR, $this->lexicon('moveObject', array(
-				'path' => $from,
-				'name' => $to,
-				'message' => $e->getMessage(),
-			), 'error'));
-			return false;
-		}
-		return true;
-	}
+        return true;
+    }
 
     /**
      * Get the name of this source type
@@ -730,186 +709,174 @@ class YandexDiskMediaSource extends modMediaSource implements modMediaSourceInte
                 'value' => '.svn,.git,_notes,nbproject,.idea,.DS_Store',
                 'desc' => 'yandexdisk.prop.skiped',
                 'lexicon' => 'yandexdisk:properties'
+            ],
+            'images' => [
+                'name' => 'images',
+                'type' => 'textfield',
+                'value' => 'jpg,jpeg,png,gif',
+                'desc' => 'yandexdisk.prop.images',
+                'lexicon' => 'yandexdisk:properties'
             ]
-//            'imageExtensions' => [
-//                'name' => 'imageExtensions',
-//                'type' => 'textfield',
-//                'value' => 'jpg,jpeg,png,gif',
-//                'desc' => 'yandexdisk.prop.imageExtensions',
-//                'lexicon' => 'yandexdisk:properties'
-//            ],
-
         ];
-	}
+    }
 
-	public function getListContextMenu($isDir, array $fileArray)
-	{
-		$canSave = $this->checkPolicy('save');
-		$canRemove = $this->checkPolicy('remove');
-		$canCreate = $this->checkPolicy('create');
-		$canView = $this->checkPolicy('view');
-		$menu = array();
-		if ($isDir) {
-			if ($this->hasPermission('directory_create') && $canCreate) {
-				$menu[] = array(
-					'text' => $this->xpdo->lexicon('file_folder_create_here'),
-					'handler' => 'this.createDirectory',
-				);
-			}
-			if ($this->hasPermission('directory_update') && $canSave) {
-				$menu[] = array(
-					'text' => $this->xpdo->lexicon('rename'),
-					'handler' => 'this.renameDirectory',
-				);
-			}
-			$menu[] = array(
-				'text' => $this->xpdo->lexicon('directory_refresh'),
-				'handler' => 'this.refreshActiveNode',
-			);
-			if ($this->hasPermission('file_upload') && $canCreate) {
-				$menu[] = '-';
-				$menu[] = array(
-					'text' => $this->xpdo->lexicon('upload_files'),
-					'handler' => 'this.uploadFiles',
-				);
-			}
-			if ($this->hasPermission('directory_remove') && $canRemove) {
-				$menu[] = '-';
-				$menu[] = array(
-					'text' => $this->xpdo->lexicon('file_folder_remove'),
-					'handler' => 'this.removeDirectory',
-				);
-			}
-		} else {
-			if ($this->hasPermission('file_update') && $canSave) {
-				$menu[] = array(
-					'text' => $this->xpdo->lexicon('rename'),
-					'handler' => 'this.renameFile',
-				);
-			}
-			if ($this->hasPermission('file_view') && $canView) {
-				$menu[] = array(
-					'text' => $this->xpdo->lexicon('file_download'),
-					'handler' => 'this.downloadFile',
-				);
-			}
-			if ($this->hasPermission('file_remove') && $canRemove) {
-				if (!empty($menu)) {
-					$menu[] = '-';
-				}
-				$menu[] = array(
-					'text' => $this->xpdo->lexicon('file_remove'),
-					'handler' => 'this.removeFile',
-				);
-			}
-		}
-		return $menu;
-	}
+    protected function getDirectoryContextMenu()
+    {
+        $menu = [];
 
-	/**
-	 * Prepare the source path for phpThumb
-	 * @param string $src
-	 * @return string
-	 */
-	public function prepareSrcForThumb($src)
-	{
-		if (strpos($src, $this->session->getUniqueKey() . '/thumbnails') !== false) {
-			return $src;
-		} else {
-			if (strpos($src, $this->getConnectorUrl()) === false) {
-				$src = $this->xpdo->getOption('url_scheme', null, MODX_URL_SCHEME) . $this->xpdo->getOption('http_host', null, MODX_HTTP_HOST) . $this->ctx->getOption('base_url', MODX_BASE_URL) . $this->getUrl($src);
-			}
-		}
-		return $src;
-	}
+        if ($this->hasPermission('directory_create') && $this->checkPolicy('create')) {
+            $menu[] = [
+                'text' => $this->xpdo->lexicon('file_folder_create_here'),
+                'handler' => 'this.createDirectory'
+            ];
+        }
+        if ($this->hasPermission('directory_update') && $this->checkPolicy('save')) {
+            $menu[] = [
+                'text' => $this->xpdo->lexicon('rename'),
+                'handler' => 'this.renameDirectory'
+            ];
+        }
+        $menu[] = [
+            'text' => $this->xpdo->lexicon('directory_refresh'),
+            'handler' => 'this.refreshActiveNode'
+        ];
+        if ($this->hasPermission('file_upload') && $this->checkPolicy('create')) {
+            $menu[] = '-';
+            $menu[] = [
+                'text' => $this->xpdo->lexicon('upload_files'),
+                'handler' => 'this.uploadFiles'
+            ];
+        }
+        if ($this->hasPermission('directory_remove') && $this->checkPolicy('remove')) {
+            $menu[] = '-';
+            $menu[] = [
+                'text' => $this->xpdo->lexicon('file_folder_remove'),
+                'handler' => 'this.removeDirectory'
+            ];
+        }
 
-	public function getContent($path)
-	{
-		$fileName = $this->xpdo->getOption('assets_path', null, MODX_ASSETS_PATH) . $this->getCacheFileName($path, 'content');
-		if (file_exists($fileName)) {
-			return file_get_contents($fileName);
-		}
-		$content = '';
-		try {
-			$content = $this->client->getContent($path);
-		} catch (Exception $e) {
-			$this->xpdo->log(xPDO::LOG_LEVEL_ERROR, $this->lexicon('getContent', array(
-				'path' => $path,
-				'message' => $e->getMessage(),
-			), 'error'));
-		}
-		if (!empty($content)) {
-			$this->xpdo->cacheManager->writeFile($fileName, $content);
-		}
-		return $content;
-	}
+        return $menu;
+    }
 
-	public function getThumbnail($path)
-        // переписать на метод из апи
-	{
-        return ''; // заглушка пока что
-		$fileName = $this->getCacheFileName($path);
-		$filePath = $this->xpdo->getOption('assets_path', null, MODX_ASSETS_PATH) . $fileName;
-		if (file_exists($filePath)) {
-			return $fileName;
-		}
-		$content = '';
-		try {
-			$content = $this->client->getThumbnail($path, DropboxClient::THUMBNAIL_SIZE_LARGE);
-		} catch (Exception $e) {
-			$this->xpdo->log(xPDO::LOG_LEVEL_ERROR, $this->lexicon('getThumbnail', array(
-				'path' => $path,
-				'message' => $e->getMessage(),
-			), 'error'));
-		}
-		if ($content) {
-			if ($this->xpdo->cacheManager->writeFile($filePath, $content)) {
-				return $fileName;
-			}
-		}
-		return '';
-	}
+    protected function getFileContextMenu()
+    {
+        $menu = [];
 
-	protected function getConnectorUrl()
-	{
-		if ($this->connectorUrl == null) {
-			$id = $this->get('id');
-			if ($id <= 0) {
-				$id = $this->get('source');
-			}
-			$this->connectorUrl = 'assets/components/yandexdisk/connector.php?source=' . $id;
-		}
-		return $this->connectorUrl;
-	}
+        if ($this->hasPermission('file_update') && $this->checkPolicy('save')) {
+            $menu[] = [
+                'text' => $this->xpdo->lexicon('rename'),
+                'handler' => 'this.renameFile'
+            ];
+        }
+        if ($this->hasPermission('file_view') && $this->checkPolicy('view')) {
+            $menu[] = [
+                'text' => $this->xpdo->lexicon('file_download'),
+                'handler' => 'this.downloadFile'
+            ];
+        }
+        if ($this->hasPermission('file_remove') && $this->checkPolicy('remove')) {
+            if (!empty($menu)) {
+                $menu[] = '-';
+            }
+            $menu[] = [
+                'text' => $this->xpdo->lexicon('file_remove'),
+                'handler' => 'this.removeFile'
+            ];
+        }
+
+        return $menu;
+    }
+
+    /**
+     * Prepare the source path for phpThumb
+     * @param string $src
+     * @return string
+     */
+    public function prepareSrcForThumb($src)
+    {
+        //return MODX_ASSETS_PATH . 'components/yandexdisk/' . $src;
+
+        if (strpos($src, '/thumbnails') !== false) {
+            return $src;
+        } elseif (strpos($src, $this->getConnectorUrl()) === false) {
+            return $this->getObjectUrl($src);
+        }
+
+        return $src;
+    }
+
+    public function getThumbnail($path, $size = null)
+    {
+        $cachedFile = $this->xpdo->getOption('assets_path', null, MODX_ASSETS_PATH) . $this->getCachedFileName($path);
+        if (file_exists($cachedFile)) {
+            return $cachedFile;
+        }
+
+        try {
+            $file = $this->client->getImagePreview($path, 'XXXL');
+        } catch (Exception $e) {
+            $this->xpdo->log(
+                xPDO::LOG_LEVEL_ERROR,
+                $this->lexicon(
+                    'object.thumbnail',
+                    [
+                        'path' => $path,
+                        'message' => $e->getMessage()
+                    ],
+                    'error'
+                )
+            );
+        }
+
+        if ($file) {
+            if ($this->xpdo->cacheManager->writeFile($cachedFile, $file['body'])) {
+                return $cachedFile;
+            }
+        }
+
+        return '';
+    }
+
+    protected function getConnectorUrl()
+    {
+        if ($this->connectorUrl == null) {
+            $id = $this->get('id');
+            if ($id <= 0) {
+                $id = $this->get('source');
+            }
+            $this->connectorUrl = 'assets/components/yandexdisk/connector.php?source=' . $id;
+        }
+
+        return $this->connectorUrl;
+    }
 
     protected function getUrl($path)
-        // возможно это стоит переписать
     {
-        return $this->getConnectorUrl() . '&' . http_build_query(
+        return join(
+            '&',
             [
-                'action' => 'web/view',
-                'path' => $path,
-            ],
-            '',
-            '&'
+                $this->getConnectorUrl(),
+                http_build_query(['action' => 'web/view', 'path' => $path], '', '&')
+            ]
         );
     }
 
-	protected function getCacheFileName($path, $type = 'thumbnail')
-	{
-		$ext = 'jpg';
-		if ($type != 'thumbnail') {
-			$ext = @pathinfo($path, PATHINFO_EXTENSION);
-			if (empty($ext)) {
-				$ext = 'bin';
-			}
-		}
-		$hash = md5(trim($path, '/'));
-		return 'components/yandexdisk/' . $this->session->getUniqueKey() . '/' . $type . 's/' . substr($hash, 0, 2) . '/' . $hash . '.' . $ext;
-	}
+    protected function getCachedFileName($path, $type = 'thumbnail')
+    {
+        $ext = 'jpg';
+        if ($type != 'thumbnail') {
+            $ext = @pathinfo($path, PATHINFO_EXTENSION);
+            if (empty($ext)) {
+                $ext = 'bin';
+            }
+        }
+        $hash = md5(trim($path, '/'));
 
-	protected function lexicon($key, array $params = [], $category = 'source')
-	{
-		return $this->xpdo->lexicon("yandexdisk.$category.$key", $params);
-	}
+        return join('/', ['components/yandexdisk/', $type.'s/', substr($hash, 0, 2), $hash . '.' . $ext]);
+    }
+
+    protected function lexicon($key, array $params = [], $category = 'source')
+    {
+        return $this->xpdo->lexicon("yandexdisk.$category.$key", $params);
+    }
 }
