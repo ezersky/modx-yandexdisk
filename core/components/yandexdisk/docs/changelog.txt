@@ -1,5 +1,19 @@
 Changelog file for Yandex Disk Media Source Provider.
 
+Yandex Disk Media Source Provider 0.5.0-alpha
+TODO:
+create object
+update object
+
+Yandex Disk Media Source Provider 0.4.0-dev
+- Updated lexicons for properties of media source
+- Added processor wev/view for process files
+- Improved method prepareSrcForThumb
+- Added caching of images to custom folder for faster work
+- Refactoring of method getThumbnail
+- Refactored method getObjectsInContainer for work with new thumbnails
+- Fixed thumbnails in files tree
+
 Yandex Disk Media Source Provider 0.3.0-dev
 ====================================
 - Done method removeObject

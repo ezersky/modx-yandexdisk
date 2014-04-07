@@ -1,5 +1,5 @@
 <?php
 
-$_lang['yandexdisk.prop.images'] = 'A comma-separated list of extensions that should be used as images.';
-$_lang['yandexdisk.prop.skiped'] = 'A comma-separated list of files and folders that should be hidden.';
-$_lang['yandexdisk.prop.token'] = 'Token';
+$_lang['yandexdisk.prop.images'] = 'Список расширений файлов через запятую, которые будут использоваться как изображения.';
+$_lang['yandexdisk.prop.skiped'] = 'Список файлов и директорий через запятую, которые должны скрываться.';
+$_lang['yandexdisk.prop.token'] = 'OAuth токен пользовательского приложения для доступа к Яндекс.Диску из MODX. О том, как его получить читайте на <a href="#">этой странице</a>.';

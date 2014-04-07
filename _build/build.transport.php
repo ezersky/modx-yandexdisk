@@ -11,8 +11,8 @@ set_time_limit(0);
 
 define('PKG_NAME', 'YandexDisk');
 define('PKG_NAME_LOWER', strtolower(PKG_NAME));
-define('PKG_VERSION', '0.3.0');
-define('PKG_RELEASE','dev');
+define('PKG_VERSION', '0.5.0');
+define('PKG_RELEASE','alpha');
 
 $root = dirname(__DIR__) . '/';
 $sources = [

@@ -18,18 +18,6 @@ class YandexDiskMediaSource extends modMediaSource implements modMediaSourceInte
      */
     private $propertyList;
 
-    /*
-     *
-    public function createObject($objectPath,$name,$content) { return true; }
-    ??? public function updateObject($objectPath,$content) { return true; }
-
-    ??? public function updateContainer() { return true; }
-
-    public function getBasePath($object = '') { return ''; }
-    public function getBaseUrl($object = '') { return ''; }
-    public function getObjectUrl($object = '') { return ''; }
-    */
-
     /**
      * Override the constructor to always force Yandex Disk sources to be streams
      * @param xPDO $xpdo
@@ -150,10 +138,14 @@ class YandexDiskMediaSource extends modMediaSource implements modMediaSourceInte
                 $classes[] = "icon-" . mb_strtolower(pathinfo($resource['displayName'], PATHINFO_EXTENSION));
                 $classes = implode(' ', array_unique($classes));
 
-                if ($fileName = $this->getThumbnail($resource['href'])) {
-                    $tip = '<img
-                    src="' . $this->ctx->getOption('assets_url', MODX_ASSETS_URL) . $fileName . '"
-                    alt="' . $resource['displayName'] . '" />';
+                $ext = strtolower(@pathinfo($resource['displayName'], PATHINFO_EXTENSION));
+                $images = explode(',', $this->getOption('images', $this->propertyList, 'jpg,jpeg,png,gif'));
+                if (in_array($ext, $images)) {
+                    if ($fileName = $this->getThumbnail($resource['href'], '150x150') ) {
+                        $tip = '<img
+                            src="' . $fileName . '"
+                            alt="' . $resource['displayName'] . '" width="150" height="150" />';
+                    }
                 }
 
                 $url = $this->getUrl($resource['href']);
@@ -172,7 +164,7 @@ class YandexDiskMediaSource extends modMediaSource implements modMediaSourceInte
                     'path' => $resource['href'],
                     'pathRelative' => $resource['href'],
                     'directory' => $path,
-                    'url' => $url,
+                    'url' => $resource['href'],
                     'file' => $this->ctx->getOption('base_url', MODX_BASE_URL) . $url,
                     'menu' => []
                 ];
@@ -219,16 +211,24 @@ class YandexDiskMediaSource extends modMediaSource implements modMediaSourceInte
             }
 
             $ext = strtolower(@pathinfo($item['text'], PATHINFO_EXTENSION));
+            $images = explode(',', $this->getOption('images', $this->propertyList, 'jpg,jpeg,png,gif'));
+
+            $thumb = $this->ctx->getOption('manager_url', MODX_MANAGER_URL) . 'templates/default/images/restyle/nopreview.jpg';
+            if (in_array($ext, $images)) {
+                if ($realThumb = $this->getThumbnail($item['path'], '80x60')) {
+                    $thumb = $realThumb;
+                }
+            }
 
             $files[$item['id']] = array_merge(
                 $item,
                 [
                     'name' => $item['text'],
-                    'relativeUrl' => $item['pathRelative'],
-                    'fullRelativeUrl' => $this->getUrl($item['path']),
+                    'relativeUrl' => $this->ctx->getOption('base_url', MODX_BASE_URL) . $this->getUrl($item['path']),
+                    'fullRelativeUrl' => $item['path'],
                     'pathname' => $item['path'],
                     'ext' => $ext,
-                    'thumb' => $this->ctx->getOption('manager_url', MODX_MANAGER_URL) . 'templates/default/images/restyle/nopreview.jpg',
+                    'thumb' => $thumb,
                     'thumbWidth' => $this->ctx->getOption('filemanager_thumb_width', 80),
                     'thumbHeight' => $this->ctx->getOption('filemanager_thumb_height', 60),
                     'menu' => [
@@ -239,26 +239,6 @@ class YandexDiskMediaSource extends modMediaSource implements modMediaSourceInte
                     ]
                 ]
             );
-
-            $images = explode(',', $this->getOption('images', $this->propertyList, 'jpg,jpeg,png,gif'));
-            if (in_array($ext, $images)) {
-                try {
-                    $thumb = $this->client->getImagePreview($item['path'], '80x60');
-                    $files[$item['id']]['thumb'] = 'data:' . $item['contentType'] . ';base64,' . base64_encode($thumb['body']);
-                } catch (DiskException $e) {
-                    $this->xpdo->log(
-                        xPDO::LOG_LEVEL_ERROR,
-                        $this->lexicon(
-                            'object.thumbnail',
-                            [
-                                'path' => $path,
-                                'message' => $e->getMessage()
-                            ],
-                            'error'
-                        )
-                    );
-                }
-            }
         }
 
         return array_values($files);
@@ -450,7 +430,6 @@ class YandexDiskMediaSource extends modMediaSource implements modMediaSourceInte
     {
         try {
             $file = $this->client->getFile($path);
-
         } catch (DiskException $e) {
             $this->xpdo->log(
                 xPDO::LOG_LEVEL_ERROR,
@@ -468,19 +447,17 @@ class YandexDiskMediaSource extends modMediaSource implements modMediaSourceInte
         }
 
         $images = explode(',', $this->getOption('images', $this->propertyList, 'jpg,jpeg,png,gif'));
-        $ext = @pathinfo($path, PATHINFO_EXTENSION);
-
-        $cachedFile = $this->xpdo->getOption('assets_path', null, MODX_ASSETS_PATH) . $this->getCachedFileName($path, 'content');
-        $this->xpdo->cacheManager->writeFile($cachedFile, $file['body']);
+        $ext = strtolower(@pathinfo($path, PATHINFO_EXTENSION));
 
         return [
             'name' => $path,
             'basename' => basename($path),
-            'path' => $cachedFile,
+            'path' => $path,
             'size' => $file['headers']['Content-Length'],
             'last_accessed' => '',
             'last_modified' => strtotime($file['headers']['Last-Modified']),
             'content' => $file['body'],
+            'mime' => $file['headers']['Content-Type'],
             'image' => in_array($ext, $images) ? true : false,
             'is_writable' => false,
             'is_readable' => true
@@ -601,33 +578,6 @@ class YandexDiskMediaSource extends modMediaSource implements modMediaSourceInte
 
         return true;
     }
-
-    /**
-     * Get the URL for an object in this source
-     * @param string $object
-     * @return string
-     */
-    public function getObjectUrl($object = '')
-    {
-        $data = [
-            'scheme' => $this->xpdo->getOption('url_scheme', null, MODX_URL_SCHEME),
-            'host' => $this->xpdo->getOption('http_host', null, MODX_HTTP_HOST),
-            'baseUrl' => $this->xpdo->getOption('base_url', null, MODX_BASE_URL),
-            'object' => $object ? $this->getUrl($object) : ''
-        ];
-
-        return join('', $data);
-    }
-
-//	/**
-//	 * Prepares the output URL when the Source is being used in an Element
-//	 * @param string $value
-//	 * @return string
-//	 */
-//	public function prepareOutputUrl($value)
-//	{
-//		return $this->getObjectUrl($value);
-//	}
 
     /**
      * Move a file or folder to a specific location
@@ -794,26 +744,29 @@ class YandexDiskMediaSource extends modMediaSource implements modMediaSourceInte
      */
     public function prepareSrcForThumb($src)
     {
-        //return MODX_ASSETS_PATH . 'components/yandexdisk/' . $src;
-
-        if (strpos($src, '/thumbnails') !== false) {
-            return $src;
-        } elseif (strpos($src, $this->getConnectorUrl()) === false) {
-            return $this->getObjectUrl($src);
-        }
+        $src = $this->xpdo->getOption('assets_path', null, MODX_ASSETS_PATH)
+            . 'components/yandexdisk/' . $this->id . dirname($src) . '/' . '150x150-' . basename($src);
 
         return $src;
     }
 
-    public function getThumbnail($path, $size = null)
+    public function getThumbnail($path, $imageSize = '')
     {
-        $cachedFile = $this->xpdo->getOption('assets_path', null, MODX_ASSETS_PATH) . $this->getCachedFileName($path);
+        $size = $imageSize != '' ? $imageSize : 'XXXL';
+        $realPath = 'components/yandexdisk/' . $this->id . dirname($path) . '/' . $size . '-' . basename($path);
+
+        $cachedFile = $this->xpdo->getOption('assets_path', null, MODX_ASSETS_PATH) . $realPath;
+        $cachedFileUrl = $this->xpdo->getOption('assets_url', null, MODX_ASSETS_URL) . $realPath;
+
         if (file_exists($cachedFile)) {
-            return $cachedFile;
+            return $cachedFileUrl;
         }
 
         try {
-            $file = $this->client->getImagePreview($path, 'XXXL');
+            $file = $this->client->getImagePreview($path, $size);
+            if ($this->xpdo->cacheManager->writeFile($cachedFile, $file['body'], 'ab')) {
+                return $cachedFileUrl;
+            }
         } catch (Exception $e) {
             $this->xpdo->log(
                 xPDO::LOG_LEVEL_ERROR,
@@ -828,26 +781,7 @@ class YandexDiskMediaSource extends modMediaSource implements modMediaSourceInte
             );
         }
 
-        if ($file) {
-            if ($this->xpdo->cacheManager->writeFile($cachedFile, $file['body'])) {
-                return $cachedFile;
-            }
-        }
-
         return '';
-    }
-
-    protected function getConnectorUrl()
-    {
-        if ($this->connectorUrl == null) {
-            $id = $this->get('id');
-            if ($id <= 0) {
-                $id = $this->get('source');
-            }
-            $this->connectorUrl = 'assets/components/yandexdisk/connector.php?source=' . $id;
-        }
-
-        return $this->connectorUrl;
     }
 
     protected function getUrl($path)
@@ -855,24 +789,10 @@ class YandexDiskMediaSource extends modMediaSource implements modMediaSourceInte
         return join(
             '&',
             [
-                $this->getConnectorUrl(),
+                'assets/components/yandexdisk/connector.php?source=' . $this->id,
                 http_build_query(['action' => 'web/view', 'path' => $path], '', '&')
             ]
         );
-    }
-
-    protected function getCachedFileName($path, $type = 'thumbnail')
-    {
-        $ext = 'jpg';
-        if ($type != 'thumbnail') {
-            $ext = @pathinfo($path, PATHINFO_EXTENSION);
-            if (empty($ext)) {
-                $ext = 'bin';
-            }
-        }
-        $hash = md5(trim($path, '/'));
-
-        return join('/', ['components/yandexdisk/', $type.'s/', substr($hash, 0, 2), $hash . '.' . $ext]);
     }
 
     protected function lexicon($key, array $params = [], $category = 'source')
