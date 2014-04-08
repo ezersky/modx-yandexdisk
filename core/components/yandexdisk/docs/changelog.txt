@@ -1,11 +1,17 @@
 Changelog file for Yandex Disk Media Source Provider.
 
 Yandex Disk Media Source Provider 0.5.0-alpha
-TODO:
-create object
-update object
+====================================
+- Done method createObject
+- Done method updateObject
+- Added lexicon line yandexdisk.error.object.update
+- Added menu for edit text files (mime type started from text/)
+- Added marking active (editing) file
+- Added click action for open edit window for file
+- Hide files from left tree in filebrowser
 
 Yandex Disk Media Source Provider 0.4.0-dev
+====================================
 - Updated lexicons for properties of media source
 - Added processor wev/view for process files
 - Improved method prepareSrcForThumb

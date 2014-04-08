@@ -86,6 +86,8 @@ class YandexDiskMediaSource extends modMediaSource implements modMediaSourceInte
                 continue;
             }
 
+            $hideFiles = !empty($this->propertyList['hideFiles']) && $this->propertyList['hideFiles'] != 'false' ? true : false;
+
             if ($resource['resourceType'] == 'dir' && $this->hasPermission('directory_list')) {
 
                 $classes = ['folder'];
@@ -125,7 +127,7 @@ class YandexDiskMediaSource extends modMediaSource implements modMediaSourceInte
                     'items' => $this->getDirectoryContextMenu(),
                 ];
             }
-            if ($resource['resourceType'] == 'file' && $this->hasPermission('file_list')) {
+            if ($resource['resourceType'] == 'file' && $this->hasPermission('file_list') && !$hideFiles) {
 
                 $classes = ['icon-file'];
                 if ($this->hasPermission('file_remove') && $this->checkPolicy('remove')) {
@@ -136,7 +138,6 @@ class YandexDiskMediaSource extends modMediaSource implements modMediaSourceInte
                 }
 
                 $classes[] = "icon-" . mb_strtolower(pathinfo($resource['displayName'], PATHINFO_EXTENSION));
-                $classes = implode(' ', array_unique($classes));
 
                 $ext = strtolower(@pathinfo($resource['displayName'], PATHINFO_EXTENSION));
                 $images = explode(',', $this->getOption('images', $this->propertyList, 'jpg,jpeg,png,gif'));
@@ -150,16 +151,27 @@ class YandexDiskMediaSource extends modMediaSource implements modMediaSourceInte
 
                 $url = $this->getUrl($resource['href']);
 
+                $action = $this->xpdo->getObject('modAction', ['controller' => 'system/file/edit']);
+                $editAction = $action ? $action->get('id') : false;
+
+                $page = !empty($editAction) ? '?a='.$editAction.'&file='.$resource['href'].'&wctx='.$this->ctx->get('key').'&source='.$this->get('id') : null;
+
+                if (!empty($this->propertyList['currentFile'])
+                    && rawurldecode($this->propertyList['currentFile']) == $resource['href']
+                    && $this->propertyList['currentAction'] == $editAction) {
+                    $classes[] = 'active-node';
+                }
+
                 $files[$resource['displayName']] = [
                     'id' => $resource['href'],
                     'text' => $resource['displayName'],
                     'lastmod' => strtotime($resource['lastModified']),
                     'size' => $resource['contentLength'],
-                    'cls' => $classes,
+                    'cls' => implode(' ', array_unique($classes)),
                     'type' => 'file',
                     'leaf' => true,
                     'qtip' => $tip ?: '',
-                    'page' => null,
+                    'page' => explode('/', $resource['contentType'])[0] == 'text' ? $page : null,
                     'perms' => '',
                     'path' => $resource['href'],
                     'pathRelative' => $resource['href'],
@@ -169,7 +181,7 @@ class YandexDiskMediaSource extends modMediaSource implements modMediaSourceInte
                     'menu' => []
                 ];
                 $files[$resource['displayName']]['menu'] = [
-                    'items' => $this->getFileContextMenu()
+                    'items' => $this->getFileContextMenu($files[$resource['displayName']]['page'])
                 ];
             }
         }
@@ -455,26 +467,71 @@ class YandexDiskMediaSource extends modMediaSource implements modMediaSourceInte
             'path' => $path,
             'size' => $file['headers']['Content-Length'],
             'last_accessed' => '',
-            'last_modified' => strtotime($file['headers']['Last-Modified']),
+            'last_modified' => $file['headers']['Last-Modified'],
             'content' => $file['body'],
             'mime' => $file['headers']['Content-Type'],
             'image' => in_array($ext, $images) ? true : false,
-            'is_writable' => false,
+            'is_writable' => true,
             'is_readable' => true
         ];
     }
 
     /**
      * Update the contents of a specific object
-     * @param string $objectPath
+     * @param string $path
      * @param string $content
      * @return boolean
      */
-    public function updateObject($objectPath, $content)
+    public function updateObject($path, $content)
     {
-        // TODO: Need to be implemented
-        // download or check if exist, change, upload to disk
-        return true;
+        $name = basename($path);
+        $path = dirname($path) == '/' ? '/' : dirname($path) . '/';
+
+        $temporaryPath = $this->xpdo->getOption(xPDO::OPT_CACHE_PATH) . 'yandexdisk/' . uniqid() . '/';
+        if (!file_exists($temporaryPath)) {
+            $this->xpdo->cacheManager->writeTree($temporaryPath);
+        }
+
+        if (!file_put_contents($temporaryPath . $name, $content)) {
+            $this->addError('file', $this->xpdo->lexicon('file_err_save'));
+            return false;
+        }
+
+        try {
+            $this->client->uploadFile(
+                $path,
+                [
+                    'name' => $name,
+                    'path' => $temporaryPath . $name,
+                    'size' => filesize($temporaryPath . $name)
+                ]
+            );
+        } catch (DiskException $e) {
+            $this->xpdo->log(
+                xPDO::LOG_LEVEL_ERROR,
+                $this->lexicon(
+                    'object.update',
+                    [
+                        'path' => $path . $name,
+                        'message' => $e->getMessage(),
+                    ],
+                    'error'
+                )
+            );
+            $this->addError('file', $this->xpdo->lexicon('file_err_save'));
+
+            @unlink($temporaryPath . $name);
+            @rmdir($temporaryPath);
+
+            return false;
+        }
+
+        @unlink($temporaryPath . $name);
+        @rmdir($temporaryPath);
+
+        $this->xpdo->logManagerAction('file_update', '', $path);
+
+        return rawurlencode($path);
     }
 
     /**
@@ -486,19 +543,35 @@ class YandexDiskMediaSource extends modMediaSource implements modMediaSourceInte
      */
     public function createObject($path, $name, $content)
     {
-        // TODO: need to be implemented
-        // create local file, save, than upload to disk
+        $path = $path ? '/' . $path . '/' : '/';
+        $name = basename($name);
 
-        file_put_contents('php://tmp', $content);
+        $temporaryPath = $this->xpdo->getOption(xPDO::OPT_CACHE_PATH) . 'yandexdisk/' . uniqid() . '/';
+        if (!file_exists($temporaryPath)) {
+            $this->xpdo->cacheManager->writeTree($temporaryPath);
+        }
+
+        if (!file_put_contents($temporaryPath . $name, $content)) {
+            $this->addError('file', $this->xpdo->lexicon('file_err_create'));
+            return false;
+        }
+
         try {
-            $this->client->uploadFile($path, 'php://tmp');
+            $this->client->uploadFile(
+                $path,
+                [
+                    'name' => $name,
+                    'path' => $temporaryPath . $name,
+                    'size' => filesize($temporaryPath . $name)
+                ]
+            );
         } catch (DiskException $e) {
             $this->xpdo->log(
                 xPDO::LOG_LEVEL_ERROR,
                 $this->lexicon(
                     'object.create',
                     [
-                        'path' => $path,
+                        'path' => $path . $name,
                         'message' => $e->getMessage(),
                     ],
                     'error'
@@ -506,10 +579,18 @@ class YandexDiskMediaSource extends modMediaSource implements modMediaSourceInte
             );
             $this->addError('file', $this->xpdo->lexicon('file_err_upload'));
 
+            @unlink($temporaryPath . $name);
+            @rmdir($temporaryPath);
+
             return false;
         }
 
-        return true;
+        @unlink($temporaryPath . $name);
+        @rmdir($temporaryPath);
+
+        $this->xpdo->logManagerAction('file_create', '', $path . $name);
+
+        return rawurlencode($path . $name);
     }
 
     /**
@@ -708,7 +789,7 @@ class YandexDiskMediaSource extends modMediaSource implements modMediaSourceInte
         return $menu;
     }
 
-    protected function getFileContextMenu()
+    protected function getFileContextMenu($page)
     {
         $menu = [];
 
@@ -717,6 +798,16 @@ class YandexDiskMediaSource extends modMediaSource implements modMediaSourceInte
                 'text' => $this->xpdo->lexicon('rename'),
                 'handler' => 'this.renameFile'
             ];
+            if ($page) {
+                $menu[] = [
+                    'text' => $this->xpdo->lexicon('file_edit'),
+                    'handler' => 'this.editFile',
+                ];
+                $menu[] = [
+                    'text' => $this->xpdo->lexicon('quick_update_file'),
+                    'handler' => 'this.quickUpdateFile',
+                ];
+            }
         }
         if ($this->hasPermission('file_view') && $this->checkPolicy('view')) {
             $menu[] = [
@@ -745,7 +836,7 @@ class YandexDiskMediaSource extends modMediaSource implements modMediaSourceInte
     public function prepareSrcForThumb($src)
     {
         $src = $this->xpdo->getOption('assets_path', null, MODX_ASSETS_PATH)
-            . 'components/yandexdisk/' . $this->id . dirname($src) . '/' . '150x150-' . basename($src);
+            . 'components/yandexdisk/' . $this->get('id') . dirname($src) . '/' . '150x150-' . basename($src);
 
         return $src;
     }
@@ -753,7 +844,7 @@ class YandexDiskMediaSource extends modMediaSource implements modMediaSourceInte
     public function getThumbnail($path, $imageSize = '')
     {
         $size = $imageSize != '' ? $imageSize : 'XXXL';
-        $realPath = 'components/yandexdisk/' . $this->id . dirname($path) . '/' . $size . '-' . basename($path);
+        $realPath = 'components/yandexdisk/' . $this->get('id') . dirname($path) . '/' . $size . '-' . basename($path);
 
         $cachedFile = $this->xpdo->getOption('assets_path', null, MODX_ASSETS_PATH) . $realPath;
         $cachedFileUrl = $this->xpdo->getOption('assets_url', null, MODX_ASSETS_URL) . $realPath;
@@ -789,7 +880,7 @@ class YandexDiskMediaSource extends modMediaSource implements modMediaSourceInte
         return join(
             '&',
             [
-                'assets/components/yandexdisk/connector.php?source=' . $this->id,
+                'assets/components/yandexdisk/connector.php?source=' . $this->get('id'),
                 http_build_query(['action' => 'web/view', 'path' => $path], '', '&')
             ]
         );

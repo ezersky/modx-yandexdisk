@@ -14,6 +14,7 @@ $_lang['yandexdisk.error.object.create'] = 'Error while creating file "[[+path]]
 $_lang['yandexdisk.error.object.remove'] = 'Error while removing file "[[+path]]" ([[+message]])';
 $_lang['yandexdisk.error.object.rename'] = 'Error while renaming file "[[+path]]" to "[[+name]]" ([[+message]])';
 $_lang['yandexdisk.error.object.move'] = 'Error while moving file from "[[+path]]" to "[[+newPath]]" ([[+message]])';
+$_lang['yandexdisk.error.object.update'] = 'Error while updating file "[[+path]]" ([[+message]])';
 $_lang['yandexdisk.error.object.content'] = 'Error while getting content of the file "[[+path]]" ([[+message]])';
 $_lang['yandexdisk.error.object.thumbnail'] = 'Error while getting thumbnail of the file "[[+path]]" ([[+message]])';
 $_lang['yandexdisk.error.object.meta'] = 'Error while retrieving metadata of the file "[[+path]]" ([[+message]])';
